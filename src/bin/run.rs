@@ -1,16 +1,19 @@
 use std::sync::Arc;
 use burn::prelude::{Backend};
+use tokenizer::Tokenizer;
 use llama_burn::models::llama::{InferenceRequest, RequestState};
 use tokio::sync::{mpsc, Mutex, RwLock};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::{util::SubscriberInitExt};
 use llama_burn::http::{AppState, TokenizerHandle};
 use llama_burn::{http};
-use llama_burn::engine::BurnEngineLlama;
+use llama_burn::engine::{BurnEngineLlama, GenerationConfig};
 use llama_burn::worker::burn_worker;
 
 // backend definition
 use llama_burn::backend::selected;
+use llama_burn::models::cacheconfig::CacheConfig;
+use llama_burn::tokenizer::Tiktoken;
 
 pub enum Message<B: Backend> {
     Request(RequestState<B>),
@@ -44,8 +47,14 @@ async fn main() {
             device: selected::device(),
         }
     };
+    let cache = engine
+        .cache_config
+        .init_cache::<selected::Backend>(&selected::device());
+    let cache = Arc::new(Mutex::new(cache));
+    let engine = Arc::new(Mutex::new(engine));
 
-    tokio::spawn(burn_worker::<selected::Backend>(rx, Arc::new(Mutex::new(engine))));
+
+    tokio::spawn(burn_worker::<selected::Backend>(rx,engine, cache));
 
     let app = http::router(state);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")

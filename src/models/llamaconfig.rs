@@ -11,7 +11,7 @@ use burn::{
 use burn_store::{
     KeyRemapper, ModuleSnapshot, PyTorchToBurnAdapter, PytorchStore, SafetensorsStore,
 };
-use crate::models::llama::{my_check_context_length, Llama};
+use crate::models::llama::{check_context_length, Llama};
 #[cfg(feature = "pretrained")]
 #[allow(unused_imports)]
 use crate::models::pretrained::{self, ModelMeta};
@@ -24,6 +24,7 @@ use crate::{
     tokenizer::Tokenizer,
     transformer::{KeyValueCache, Transformer, TransformerConfig},
 };
+use crate::models::cacheconfig::CacheConfig;
 use crate::models::pretrained::Pretrained;
 
 #[derive(Config, Debug)]
@@ -85,19 +86,20 @@ pub fn load_llama3_2_3b<B: Backend>(
     tokenizer_path: &str,
     max_seq_len: usize,
     device: &Device<B>,
-) -> Result<Llama<B, Tiktoken>, String> {
+) -> Result<(Llama<B, Tiktoken>, CacheConfig), String> {
     use burn::record::{HalfPrecisionSettings, NamedMpkFileRecorder};
 
-    let mut llama = LlamaConfig::llama3_2_3b(tokenizer_path)
-        .with_max_seq_len(max_seq_len)
-        .init::<B, Tiktoken>(device)?;
+    let llama_config = LlamaConfig::llama3_2_3b(tokenizer_path)
+        .with_max_seq_len(max_seq_len);
 
+    let mut llama = llama_config.init::<B, Tiktoken>(device)?;
+    let cache_config = CacheConfig::from(llama_config);
     let recorder = NamedMpkFileRecorder::<HalfPrecisionSettings>::new();
     llama = llama
         .load(checkpoint, &recorder)
         .map_err(|err| format!("Failed to load pre-trained Llama model.\nError: {err}"))?;
 
-    Ok(llama)
+    Ok((llama, cache_config))
 }
 
 
@@ -111,9 +113,9 @@ pub fn my_pretrained_llama323b_instruct() -> Pretrained {
 pub fn llama3_2_3b_pretrained_tiktoken<B: Backend>(
     max_seq_len: usize,
     device: &Device<B>,
-) -> Result<Llama<B, Tiktoken>, String> {
+) -> Result<(Llama<B, Tiktoken>, CacheConfig), String> {
     // Llama-3.2 models support context length up to 128K tokens.
-    my_check_context_length(max_seq_len, 128 * 1024);
+    check_context_length(max_seq_len, 128 * 1024);
 
     // Download checkpoint and tokenizer
     let model = my_pretrained_llama323b_instruct();
@@ -186,6 +188,17 @@ impl LlamaConfig {
             .with_num_key_value_heads(Some(4))
             .with_rope(RopeConfig::new(10000.0))
     }
+    pub fn generate_cache_configuration(self) -> CacheConfig {
+        let num_key_value_heads = self.num_key_value_heads.unwrap_or(self.num_attention_heads);
+        CacheConfig::new(
+            self.num_attention_heads,
+            self.num_hidden_layers,
+            self.max_batch_size,
+            self.max_seq_len,
+            self.d_model,
+            Some(num_key_value_heads),
+        )
+    }
 
 
     /// Initialize a new [Llama] module.
@@ -207,17 +220,6 @@ impl LlamaConfig {
             .with_norm_eps(self.norm_eps)
             .init(device);
 
-        let cache = (0..self.num_hidden_layers)
-            .map(|_| {
-                KeyValueCache::new(
-                    self.max_batch_size,
-                    num_key_value_heads,
-                    self.max_seq_len,
-                    self.d_model / self.num_attention_heads,
-                    device,
-                )
-            })
-            .collect::<Vec<_>>();
 
         let rope = RotaryEncodingConfig::new(
             self.max_seq_len * 2,
@@ -235,7 +237,6 @@ impl LlamaConfig {
         Ok(Llama {
             tokenizer,
             model,
-            cache,
             rope,
             device: device.clone(),
         })

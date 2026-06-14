@@ -1,4 +1,5 @@
 use burn::prelude::Backend;
+use crate::models::cacheconfig::CacheConfig;
 use crate::models::llama::Llama;
 use crate::models::llamaconfig::llama3_2_3b_pretrained_tiktoken;
 use crate::sampling::Sampler;
@@ -32,18 +33,21 @@ pub struct BurnEngineLlama<B: Backend> {
     pub sampler: Sampler,
     pub temperature: f64,
     pub sample_len: usize,
+    pub cache_config: CacheConfig
 }
 
 impl<B: Backend> BurnEngineLlama<B> {
     pub fn new(
         llama: Llama<B, Tiktoken>,
-        generated: GenerationConfig,
+        generation_config: GenerationConfig,
+        cache_config: CacheConfig
     ) -> Self {
         Self {
             llama,
-            sampler: generated.sampler,
-            temperature: generated.temperature,
-            sample_len: generated.sample_len,
+            sampler: generation_config.sampler,
+            temperature: generation_config.temperature,
+            sample_len: generation_config.sample_len,
+            cache_config
         }
     }
 
@@ -53,18 +57,21 @@ impl<B: Backend> BurnEngineLlama<B> {
         let sample_len = 65;
         let sampler = Sampler::Argmax;
 
-        let llama = llama3_2_3b_pretrained_tiktoken::<B>(max_seq_len, device).map_err(|err| anyhow::anyhow!("Failed to load Llama model: {}", err))?;
+        let (llama, cache_config) = llama3_2_3b_pretrained_tiktoken::<B>(max_seq_len, device).map_err(|err| anyhow::anyhow!("Failed to load Llama model: {}", err))?;
 
-        Ok(Self::new(
+        let generation_config = GenerationConfig {
+            sampler,
+            temperature,
+            sample_len,
+            top_p: None,
+            top_k: None,
+            repetition_penalty: None,
+        };
+        let engine = Self::new(
             llama,
-            GenerationConfig {
-                sampler,
-                temperature,
-                sample_len,
-                top_p: None,
-                top_k: None,
-                repetition_penalty: None,
-            }
-        ))
+            generation_config,
+            cache_config
+        );
+        Ok(engine)
     }
 }

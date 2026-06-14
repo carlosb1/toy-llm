@@ -94,7 +94,7 @@ pub struct Llama<B: Backend, T: Tokenizer> {
     /// Llama decoder-only transformer.
     pub model: Transformer<B>,
     /// Key-value cache for each transformer block.
-    pub cache: Vec<KeyValueCache<B>>,
+  //  pub cache: Vec<KeyValueCache<B>>,
     /// Rotary positional encoding (RoPE).
     pub rope: RotaryEncoding<B>,
     pub device: Device<B>,
@@ -123,14 +123,14 @@ impl<B: Backend, T: Tokenizer> Llama<B, T> {
         }
     }
 
-    fn prefill(&mut self, state: &mut RequestState<B>) -> Tensor<B, 2> {
+    fn prefill(&mut self, state: &mut RequestState<B>, cache: &mut Vec<KeyValueCache<B>>) -> Tensor<B, 2> {
         let x = state
             .tokens
             .clone()
             .select(0, state.input_pos.clone())
             .reshape([1, -1]);
 
-        let logits = self.model.forward(x, &mut self.cache, &self.rope);
+        let logits = self.model.forward(x, cache, &self.rope);
 
         let [batch_size, seq_len, _vocab_size] = logits.dims();
 
@@ -143,14 +143,14 @@ impl<B: Backend, T: Tokenizer> Llama<B, T> {
 
         next_token_logits
     }
-    fn decode_step(&mut self, state: &mut RequestState<B>) -> Tensor<B, 2> {
+    fn decode_step(&mut self, state: &mut RequestState<B>, cache: &mut Vec<KeyValueCache<B>>) -> Tensor<B, 2> {
         let x = state
             .tokens
             .clone()
             .select(0, state.input_pos.clone())
             .reshape([1, -1]);
 
-        let logits = self.model.forward(x, &mut self.cache, &self.rope);
+        let logits = self.model.forward(x, cache, &self.rope);
 
         let [batch_size, seq_len, _vocab_size] = logits.dims();
 
@@ -219,6 +219,7 @@ impl<B: Backend, T: Tokenizer> Llama<B, T> {
         sample_len: usize,
         temperature: f64,
         sampler: &mut Sampler,
+        cache: &mut Vec<KeyValueCache<B>>,
     ) -> GenerationOutput {
         let mut state = self.prepare_request(prompt, sample_len);
         let stop_tokens = Tensor::from_ints(self.tokenizer.stop_ids().as_slice(), &self.device);
@@ -226,7 +227,7 @@ impl<B: Backend, T: Tokenizer> Llama<B, T> {
         let now = Instant::now();
 
         // PREFILL
-        let logits = self.prefill(&mut state);
+        let logits = self.prefill(&mut state, cache);
         let next_token = self.sample_next_token(logits, temperature, sampler);
 
         if !self.should_stop(next_token.clone(), &stop_tokens) {
@@ -237,7 +238,7 @@ impl<B: Backend, T: Tokenizer> Llama<B, T> {
 
         // DECODE
         while !state.is_finished && state.num_generated_tokens < sample_len {
-            let logits = self.decode_step(&mut state);
+            let logits = self.decode_step(&mut state, cache);
             let next_token = self.sample_next_token(logits, temperature, sampler);
 
             if self.should_stop(next_token.clone(), &stop_tokens) {
@@ -292,15 +293,17 @@ impl<B: Backend, T: Tokenizer> Llama<B, T> {
     }
 
     /// Reset the model state (used between generations)
-    pub fn reset(&mut self) {
-        self.cache.iter_mut().for_each(|cache| cache.reset());
+    /*
+    pub fn reset(&mut self,  cache: &mut Vec<KeyValueCache<B>>) {
+        cache.iter_mut().for_each(|cache| cache.reset());
     }
-
+*/
     pub fn generate_from_tokens(
         &mut self,
         state: &mut RequestState<B>,
         sampler: &mut Sampler,
         temperature: f64,
+        cache: &mut Vec<KeyValueCache<B>>
     ) -> anyhow::Result<GenerationOutput> {
         let now = Instant::now();
 
@@ -309,7 +312,7 @@ impl<B: Backend, T: Tokenizer> Llama<B, T> {
             "Starting prefill generation with prompt length: {}",
             state.prompt_len
         );
-        let logits = self.prefill(state);
+        let logits = self.prefill(state, cache);
         let next_token = self.sample_next_token(logits, temperature, sampler);
 
         if !self.should_stop(next_token.clone(), &state.stop_tokens) {
@@ -332,7 +335,7 @@ impl<B: Backend, T: Tokenizer> Llama<B, T> {
                 "Decoding step with input position: {:?} and stop tokens: {:?}\r",
                 state.input_pos, state.stop_tokens
             );
-            let logits = self.decode_step(state);
+            let logits = self.decode_step(state, cache);
             let next_token = self.sample_next_token(logits, temperature, sampler);
 
             println!("Sampled next token: {:?}\r", next_token);
@@ -354,7 +357,7 @@ impl<B: Backend, T: Tokenizer> Llama<B, T> {
 
 /// Check that the requested context length is within the model's supported maximum.
 
-pub fn my_check_context_length(max_seq_len: usize, max_context_len: usize) {
+pub fn check_context_length(max_seq_len: usize, max_context_len: usize) {
     if max_seq_len > max_context_len {
         eprintln!(
             "Warning: max_seq_len ({}) exceeds the model's maximum context length ({})",
