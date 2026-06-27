@@ -3,10 +3,10 @@ use anyhow::anyhow;
 use burn::prelude::Backend;
 use tokio::sync::{mpsc, Mutex};
 use crate::engine::BurnEngineLlama;
+use crate::models::cacheconfig::CacheConfig;
 use crate::models::llama::{InferenceRequest, RequestState};
-use crate::transformer::KeyValueCache;
 
-pub async fn burn_worker<B: Backend>(mut rx: mpsc::Receiver<InferenceRequest<B>>, engine: Arc<Mutex<BurnEngineLlama<B>>>, cache: Arc<Mutex<Vec<KeyValueCache<B>>>>) {
+pub async fn burn_worker<B: Backend>(mut rx: mpsc::Receiver<InferenceRequest<B>>, engine: Arc<Mutex<BurnEngineLlama<B>>>, cache_config: CacheConfig) {
     while let Some(req) = rx.recv().await {
         let temperature = req.temperature;
         let response_tx = req.response_tx;
@@ -15,8 +15,6 @@ pub async fn burn_worker<B: Backend>(mut rx: mpsc::Receiver<InferenceRequest<B>>
         let stop_tokens = req.stop_tokens;
         let input_pos = req.input_pos;
         let sample_len = req.sample_len;
-
-
         let mut state = RequestState {
             prompt_len,
             tokens,
@@ -31,7 +29,7 @@ pub async fn burn_worker<B: Backend>(mut rx: mpsc::Receiver<InferenceRequest<B>>
             let guard = &mut *engine.lock().await;
             let llama = &mut guard.llama;
             let sampler = &mut guard.sampler;
-            let mut  cache = cache.lock().await;
+            let mut cache = cache_config.init_cache(&llama.device);
 
             llama.generate_from_tokens(
                 &mut state,

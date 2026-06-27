@@ -1,8 +1,8 @@
 /// Pre-trained model metadata.
 pub struct Pretrained {
-    pub name: &'static str,
-    pub model: &'static str,
-    pub tokenizer: &'static str,
+    pub name: String,
+    pub model: String,
+    pub tokenizer: String,
 }
 
 #[cfg(feature = "pretrained")]
@@ -22,7 +22,7 @@ mod downloader {
                 .expect("Should be able to get home directory")
                 .join(".cache")
                 .join("llama-burn")
-                .join(self.name);
+                .join(self.name.as_str());
 
             if !model_dir.exists() {
                 create_dir_all(&model_dir)?;
@@ -48,12 +48,12 @@ mod downloader {
 
         /// Download the pre-trained model weights to the local cache directory.
         pub fn download_weights(&self) -> Result<PathBuf, std::io::Error> {
-            self.download(self.model)
+            self.download(self.model.as_str())
         }
 
         /// Download the tokenizer to the local cache directory.
         pub fn download_tokenizer(&self) -> Result<PathBuf, std::io::Error> {
-            self.download(self.tokenizer)
+            self.download(self.tokenizer.as_str())
         }
     }
 }
@@ -82,34 +82,34 @@ impl ModelMeta for Llama {
     fn pretrained(&self) -> Pretrained {
         match self {
             Self::Llama3 => Pretrained {
-                name: "Llama-3-8B",
-                model: "https://huggingface.co/tracel-ai/llama-3-8b-burn/resolve/main/model.mpk?download=true",
-                tokenizer: "https://huggingface.co/tracel-ai/llama-3-8b-burn/resolve/main/tokenizer.model?download=true",
+                name: "Llama-3-8B".to_string(),
+                model: "https://huggingface.co/tracel-ai/llama-3-8b-burn/resolve/main/model.mpk?download=true".to_string(),
+                tokenizer: "https://huggingface.co/tracel-ai/llama-3-8b-burn/resolve/main/tokenizer.model?download=true".to_string(),
             },
             Self::Llama3Instruct => Pretrained {
-                name: "Llama-3-8B-Instruct",
-                model: "https://huggingface.co/tracel-ai/llama-3-8b-instruct-burn/resolve/main/model.mpk?download=true",
-                tokenizer: "https://huggingface.co/tracel-ai/llama-3-8b-instruct-burn/resolve/main/tokenizer.model?download=true",
+                name: "Llama-3-8B-Instruct".to_string(),
+                model: "https://huggingface.co/tracel-ai/llama-3-8b-instruct-burn/resolve/main/model.mpk?download=true".to_string(),
+                tokenizer: "https://huggingface.co/tracel-ai/llama-3-8b-instruct-burn/resolve/main/tokenizer.model?download=true".to_string(),
             },
             Self::Llama31Instruct => Pretrained {
-                name: "Llama-3.1-8B-Instruct",
-                model: "https://huggingface.co/tracel-ai/llama-3.1-8b-instruct-burn/resolve/main/model.mpk?download=true",
-                tokenizer: "https://huggingface.co/tracel-ai/llama-3.1-8b-instruct-burn/resolve/main/tokenizer.model?download=true",
+                name: "Llama-3.1-8B-Instruct".to_string(),
+                model: "https://huggingface.co/tracel-ai/llama-3.1-8b-instruct-burn/resolve/main/model.mpk?download=true".to_string(),
+                tokenizer: "https://huggingface.co/tracel-ai/llama-3.1-8b-instruct-burn/resolve/main/tokenizer.model?download=true".to_string(),
             },
             Self::Llama323bInstruct => Pretrained {
-                name: "Llama-3.2-3B-Instruct",
-                model: "https://huggingface.co/tracel-ai/llama-3.2-3b-instruct-burn/resolve/main/model.mpk?download=true",
-                tokenizer: "https://huggingface.co/tracel-ai/llama-3.2-3b-instruct-burn/resolve/main/tokenizer.model?download=true",
+                name: "Llama-3.2-3B-Instruct".to_string(),
+                model: "https://huggingface.co/tracel-ai/llama-3.2-3b-instruct-burn/resolve/main/model.mpk?download=true".to_string(),
+                tokenizer: "https://huggingface.co/tracel-ai/llama-3.2-3b-instruct-burn/resolve/main/tokenizer.model?download=true".to_string(),
             },
             Self::Llama321bInstruct => Pretrained {
-                name: "Llama-3.2-1B-Instruct",
-                model: "https://huggingface.co/tracel-ai/llama-3.2-1b-instruct-burn/resolve/main/model.mpk?download=true",
-                tokenizer: "https://huggingface.co/tracel-ai/llama-3.2-1b-instruct-burn/resolve/main/tokenizer.model?download=true",
+                name: "Llama-3.2-1B-Instruct".to_string(),
+                model: "https://huggingface.co/tracel-ai/llama-3.2-1b-instruct-burn/resolve/main/model.mpk?download=true".to_string(),
+                tokenizer: "https://huggingface.co/tracel-ai/llama-3.2-1b-instruct-burn/resolve/main/tokenizer.model?download=true".to_string(),
             },
             Self::TinyLlama => Pretrained {
-                name: "TinyLlama-1.1B",
-                model: "https://huggingface.co/tracel-ai/tiny-llama-1.1b-burn/resolve/main/model.mpk?download=true",
-                tokenizer: "https://huggingface.co/tracel-ai/tiny-llama-1.1b-burn/resolve/main/tokenizer.json?download=true",
+                name: "TinyLlama-1.1B".to_string(),
+                model: "https://huggingface.co/tracel-ai/tiny-llama-1.1b-burn/resolve/main/model.mpk?download=true".to_string(),
+                tokenizer: "https://huggingface.co/tracel-ai/tiny-llama-1.1b-burn/resolve/main/tokenizer.json?download=true".to_string(),
             },
         }
     }

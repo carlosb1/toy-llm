@@ -47,14 +47,12 @@ async fn main() {
             device: selected::device(),
         }
     };
-    let cache = engine
-        .cache_config
-        .init_cache::<selected::Backend>(&selected::device());
-    let cache = Arc::new(Mutex::new(cache));
+    let cache_config = engine.cache_config.clone();
+
     let engine = Arc::new(Mutex::new(engine));
 
 
-    tokio::spawn(burn_worker::<selected::Backend>(rx,engine, cache));
+    tokio::spawn(burn_worker::<selected::Backend>(rx,engine, cache_config));
 
     let app = http::router(state);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")

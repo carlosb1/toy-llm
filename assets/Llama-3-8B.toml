@@ -1,0 +1,26 @@
+id = "llama3_8b"
+architecture = "llama"
+tokenizer_kind = "tiktoken"
+checkpoint_format = "burn_mpk"
+weight_layout = "burn_native"
+max_context_len = 8192
+
+[pretrained]
+name = "Llama-3-8B"
+model = "https://huggingface.co/tracel-ai/llama-3-8b-burn/resolve/main/model.mpk?download=true"
+tokenizer = "https://huggingface.co/tracel-ai/llama-3-8b-burn/resolve/main/tokenizer.model?download=true"
+
+[config]
+d_model = 4096
+hidden_size = 14336
+num_hidden_layers = 32
+num_attention_heads = 32
+num_key_value_heads = 8
+vocab_size = 128256
+norm_eps = 0.00001
+max_seq_len = 128
+max_batch_size = 1
+tokenizer = ""
+
+[config.rope]
+theta = 500000.0

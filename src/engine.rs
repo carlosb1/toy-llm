@@ -3,6 +3,11 @@ use crate::models::cacheconfig::CacheConfig;
 use crate::models::llama::Llama;
 use crate::models::llamaconfig::llama3_2_3b_pretrained_tiktoken;
 use crate::sampling::Sampler;
+#[allow(unused_imports)]
+use crate::models::pretrained::{self, ModelMeta};
+#[cfg(feature = "tiny")]
+use crate::tokenizer::SentiencePieceTokenizer;
+#[cfg(feature = "llama3")]
 use crate::tokenizer::Tiktoken;
 
 #[derive(Clone, Debug)]

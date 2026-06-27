@@ -5,6 +5,7 @@ name = "llama-burn"
 version = "0.1.0"
 edition = "2021"
 description = "Llama 3 large language model with Burn"
+default-run = "run"
 
 [features]
 default = ["pretrained"]
@@ -81,6 +82,7 @@ tokenizer = "0.1.2" # std_rng is for no_std
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 uuid = { version = "1.21.0", features = ["v4", "serde"] }
+toml = "0.9.12+spec-1.1.0"
 
 [dev-dependencies]
 # burn = { path = "../../burn/crates/burn", default-features = false, features = ["std"] }
@@ -95,4 +97,10 @@ rustdoc-args = ["--cfg", "docsrs"]
 [[bin]]
 name = "run"
 path= "src/bin/run.rs"
+required-features = []
+
+
+[[bin]]
+name = "load"
+path= "src/bin/load.rs"
 required-features = []
