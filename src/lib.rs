@@ -1,10 +1,7 @@
 #![doc = include_str!("../README.md")]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
-pub(crate) mod cache;
-pub mod sampling;
 pub mod tokenizer;
-mod transformer;
 pub mod http;
 pub mod worker;
 pub mod engine;

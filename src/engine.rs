@@ -1,8 +1,8 @@
 use burn::prelude::Backend;
 use crate::models::cacheconfig::CacheConfig;
-use crate::models::llama::Llama;
-use crate::models::llamaconfig::llama3_2_3b_pretrained_tiktoken;
-use crate::sampling::Sampler;
+use crate::models::llama::llama::Llama;
+use crate::models::loader::ModelKind;
+use crate::models::sampling::Sampler;
 #[allow(unused_imports)]
 use crate::models::pretrained::{self, ModelMeta};
 #[cfg(feature = "tiny")]
@@ -61,8 +61,7 @@ impl<B: Backend> BurnEngineLlama<B> {
         let max_seq_len = 128;
         let sample_len = 65;
         let sampler = Sampler::Argmax;
-
-        let (llama, cache_config) = llama3_2_3b_pretrained_tiktoken::<B>(max_seq_len, device).map_err(|err| anyhow::anyhow!("Failed to load Llama model: {}", err))?;
+       let (llama, cache_config ) = ModelKind::Llama3_2_3B.load(max_seq_len, device).map_err(|err| anyhow::anyhow!("Failed to load Llama model: {}", err))?;
 
         let generation_config = GenerationConfig {
             sampler,

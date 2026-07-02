@@ -4,7 +4,7 @@ use burn::prelude::Backend;
 use tokio::sync::{mpsc, Mutex};
 use crate::engine::BurnEngineLlama;
 use crate::models::cacheconfig::CacheConfig;
-use crate::models::llama::{InferenceRequest, RequestState};
+use crate::models::llama::llama::{InferenceRequest, RequestState};
 
 pub async fn burn_worker<B: Backend>(mut rx: mpsc::Receiver<InferenceRequest<B>>, engine: Arc<Mutex<BurnEngineLlama<B>>>, cache_config: CacheConfig) {
     while let Some(req) = rx.recv().await {

@@ -10,7 +10,7 @@ use serde_json::json;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::Instant;
 use uuid::Uuid;
-use crate::models::llama::{InferenceRequest, TokenTensor};
+use crate::models::llama::llama::{InferenceRequest, TokenTensor};
 use crate::tokenizer::Tokenizer;
 
 

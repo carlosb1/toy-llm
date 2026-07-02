@@ -1,9 +1,8 @@
 use std::path::PathBuf;
-use burn::config::Config;
 use burn::prelude::{Backend, Device};
 use crate::models::cacheconfig::CacheConfig;
-use crate::models::llama::{check_context_length, Llama};
-use crate::models::llamaconfig::{llama3_1_8b_pretrained_tiktoken, llama3_2_3b_pretrained_tiktoken, LlamaConfig};
+use crate::models::llama::llama::{check_context_length, Llama};
+use crate::models::llama::llamaconfig::{LlamaConfig};
 #[allow(unused_imports)]
 use crate::models::pretrained::{self, ModelMeta};
 #[cfg(feature = "llama3")]
@@ -18,7 +17,6 @@ pub enum ModelKind {
     Llama3_1_8B,
 }
 impl ModelKind {
-
     pub fn id(&self) -> &'static str {
         match self {
             Self::Llama3_2_3B => "llama3_2_3b_instruct",
@@ -66,7 +64,7 @@ where
         .map_err(|err| err.to_string()).map_err(|err| anyhow::anyhow!("Failed to load model manifest from {manifest_path}: {err}"))?;
 
     check_context_length(max_seq_len, manifest.max_context_len);
-    let files = resolve_model_files(&manifest).map_err(|err| anyhow::anyhow!("Failed to resolve model files from manifest: {err}"))?;
+    let files = resolve_and_download_model_files(&manifest).map_err(|err| anyhow::anyhow!("Failed to resolve model files from manifest: {err}"))?;
     let llama_config = manifest
         .config
         .clone()
@@ -83,7 +81,7 @@ where
 }
 
 
-pub fn resolve_model_files(manifest: &ModelManifest) -> Result<ResolvedModelFiles, String> {
+pub fn resolve_and_download_model_files(manifest: &ModelManifest) -> Result<ResolvedModelFiles, String> {
     if let Some(pretrained_manifest) = &manifest.pretrained {
         let pretrained = Pretrained {
             name: pretrained_manifest.name.clone(),

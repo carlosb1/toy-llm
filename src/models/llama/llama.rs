@@ -13,11 +13,7 @@ use burn::{
     },
 };
 
-use crate::{
-    sampling::Sampler,
-    tokenizer::Tokenizer,
-    transformer::{KeyValueCache, Transformer, TransformerConfig},
-};
+use crate::tokenizer::Tokenizer;
 #[cfg(feature = "import")]
 use burn_store::{
     KeyRemapper, ModuleSnapshot, PyTorchToBurnAdapter, PytorchStore, SafetensorsStore,
@@ -37,6 +33,8 @@ pub struct GenerationOutput {
 #[cfg(feature = "pretrained")]
 #[allow(unused_imports)]
 use crate::models::pretrained::{self, ModelMeta};
+use crate::models::sampling::Sampler;
+use crate::models::transformer::{KeyValueCache, Transformer, TransformerConfig};
 
 pub struct TokenTensor<B: Backend> {
     pub prompt_len: usize,

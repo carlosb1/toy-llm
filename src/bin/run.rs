@@ -1,19 +1,16 @@
 use std::sync::Arc;
 use burn::prelude::{Backend};
-use tokenizer::Tokenizer;
-use llama_burn::models::llama::{InferenceRequest, RequestState};
-use tokio::sync::{mpsc, Mutex, RwLock};
+use llama_burn::models::llama::llama::{InferenceRequest, RequestState};
+use tokio::sync::{mpsc, Mutex};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::{util::SubscriberInitExt};
 use llama_burn::http::{AppState, TokenizerHandle};
 use llama_burn::{http};
-use llama_burn::engine::{BurnEngineLlama, GenerationConfig};
+use llama_burn::engine::{BurnEngineLlama};
 use llama_burn::worker::burn_worker;
 
 // backend definition
 use llama_burn::backend::selected;
-use llama_burn::models::cacheconfig::CacheConfig;
-use llama_burn::tokenizer::Tiktoken;
 
 pub enum Message<B: Backend> {
     Request(RequestState<B>),

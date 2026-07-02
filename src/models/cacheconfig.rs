@@ -1,7 +1,6 @@
 use burn::prelude::{Backend, Device};
-use crate::models::llamaconfig::LlamaConfig;
-use crate::tokenizer::Tokenizer;
-use crate::transformer::KeyValueCache;
+use crate::models::llama::llamaconfig::LlamaConfig;
+use crate::models::transformer::KeyValueCache;
 
 #[derive(Debug, Clone)]
 pub struct CacheConfig {

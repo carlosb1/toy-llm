@@ -8,7 +8,7 @@ use burn::{
     tensor::{activation::softmax, backend::Backend, Bool, Device, Int, Tensor},
 };
 
-use crate::cache::AutoregressiveCache;
+use crate::models::cache::AutoregressiveCache;
 
 /// Configuration to create a Llama [decoder-only transformer](Transformer).
 #[derive(Config, Debug)]
