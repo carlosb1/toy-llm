@@ -1,14 +1,12 @@
-use burn::prelude::Backend;
-use crate::models::cacheconfig::CacheConfig;
+use crate::models::llama::cacheconfig::CacheConfig;
 use crate::models::llama::llama::Llama;
-use crate::models::loader::ModelKind;
-use crate::models::sampling::Sampler;
+use crate::models::llama::loader::ModelKind;
 #[allow(unused_imports)]
-use crate::models::pretrained::{self, ModelMeta};
-#[cfg(feature = "tiny")]
-use crate::tokenizer::SentiencePieceTokenizer;
+use crate::models::llama::pretrained::{self, ModelMeta};
+use crate::models::llama::sampling::Sampler;
 #[cfg(feature = "llama3")]
 use crate::tokenizer::Tiktoken;
+use burn::prelude::Backend;
 
 #[derive(Clone, Debug)]
 pub struct GenerationConfig {
@@ -38,21 +36,21 @@ pub struct BurnEngineLlama<B: Backend> {
     pub sampler: Sampler,
     pub temperature: f64,
     pub sample_len: usize,
-    pub cache_config: CacheConfig
+    pub cache_config: CacheConfig,
 }
 
 impl<B: Backend> BurnEngineLlama<B> {
     pub fn new(
         llama: Llama<B, Tiktoken>,
         generation_config: GenerationConfig,
-        cache_config: CacheConfig
+        cache_config: CacheConfig,
     ) -> Self {
         Self {
             llama,
             sampler: generation_config.sampler,
             temperature: generation_config.temperature,
             sample_len: generation_config.sample_len,
-            cache_config
+            cache_config,
         }
     }
 
@@ -61,7 +59,9 @@ impl<B: Backend> BurnEngineLlama<B> {
         let max_seq_len = 128;
         let sample_len = 65;
         let sampler = Sampler::Argmax;
-       let (llama, cache_config ) = ModelKind::Llama3_2_3B.load(max_seq_len, device).map_err(|err| anyhow::anyhow!("Failed to load Llama model: {}", err))?;
+        let (llama, cache_config) = ModelKind::Llama3_2_3B
+            .load(max_seq_len, device)
+            .map_err(|err| anyhow::anyhow!("Failed to load Llama model: {}", err))?;
 
         let generation_config = GenerationConfig {
             sampler,
@@ -71,11 +71,7 @@ impl<B: Backend> BurnEngineLlama<B> {
             top_k: None,
             repetition_penalty: None,
         };
-        let engine = Self::new(
-            llama,
-            generation_config,
-            cache_config
-        );
+        let engine = Self::new(llama, generation_config, cache_config);
         Ok(engine)
     }
 }

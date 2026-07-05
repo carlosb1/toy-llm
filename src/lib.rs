@@ -1,12 +1,12 @@
 #![doc = include_str!("../README.md")]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
-pub mod tokenizer;
-pub mod http;
-pub mod worker;
-pub mod engine;
 pub mod backend;
+pub mod engine;
+pub mod http;
 pub mod models;
+pub mod tokenizer;
+pub mod worker;
 
 #[cfg(test)]
 mod tests {

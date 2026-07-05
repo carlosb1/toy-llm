@@ -1,12 +1,16 @@
-use std::sync::Arc;
+use crate::engine::BurnEngineLlama;
+use crate::models::llama::cacheconfig::CacheConfig;
+use crate::models::llama::llama::{InferenceRequest, RequestState};
 use anyhow::anyhow;
 use burn::prelude::Backend;
+use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
-use crate::engine::BurnEngineLlama;
-use crate::models::cacheconfig::CacheConfig;
-use crate::models::llama::llama::{InferenceRequest, RequestState};
 
-pub async fn burn_worker<B: Backend>(mut rx: mpsc::Receiver<InferenceRequest<B>>, engine: Arc<Mutex<BurnEngineLlama<B>>>, cache_config: CacheConfig) {
+pub async fn burn_worker<B: Backend>(
+    mut rx: mpsc::Receiver<InferenceRequest<B>>,
+    engine: Arc<Mutex<BurnEngineLlama<B>>>,
+    cache_config: CacheConfig,
+) {
     while let Some(req) = rx.recv().await {
         let temperature = req.temperature;
         let response_tx = req.response_tx;
@@ -31,12 +35,7 @@ pub async fn burn_worker<B: Backend>(mut rx: mpsc::Receiver<InferenceRequest<B>>
             let sampler = &mut guard.sampler;
             let mut cache = cache_config.init_cache(&llama.device);
 
-            llama.generate_from_tokens(
-                &mut state,
-                sampler,
-                temperature,
-                &mut cache
-            )
+            llama.generate_from_tokens(&mut state, sampler, temperature, &mut cache)
         };
 
         let output = match result {

@@ -1,11 +1,9 @@
-use std::collections::HashMap;
 use std::time::Instant;
 
 use burn::module::Module;
 use burn::record::{FileRecorder, RecorderError};
 use burn::tensor::cast::ToElement;
 use burn::{
-    config::Config,
     nn::{RotaryEncoding, RotaryEncodingConfig},
     tensor::{
         activation::softmax, backend::Backend, Device, ElementConversion, Int, Shape, Tensor,
@@ -13,11 +11,14 @@ use burn::{
     },
 };
 
+#[cfg(feature = "pretrained")]
+use crate::models::llama::pretrained::ModelMeta;
+use crate::models::llama::sampling::Sampler;
+use crate::models::llama::transformer::{KeyValueCache, Transformer};
+
 use crate::tokenizer::Tokenizer;
 #[cfg(feature = "import")]
-use burn_store::{
-    KeyRemapper, ModuleSnapshot, PyTorchToBurnAdapter, PytorchStore, SafetensorsStore,
-};
+use burn_store::{PyTorchToBurnAdapter, PytorchStore, SafetensorsStore};
 use tokio::sync::oneshot;
 
 /// Generated text sample output.
@@ -30,19 +31,12 @@ pub struct GenerationOutput {
     pub time: f64,
 }
 
-#[cfg(feature = "pretrained")]
-#[allow(unused_imports)]
-use crate::models::pretrained::{self, ModelMeta};
-use crate::models::sampling::Sampler;
-use crate::models::transformer::{KeyValueCache, Transformer, TransformerConfig};
-
 pub struct TokenTensor<B: Backend> {
     pub prompt_len: usize,
     pub tokens: Tensor<B, 1, Int>,
     pub input_pos: Tensor<B, 1, Int>,
     pub stop_tokens: Tensor<B, 1, Int>,
 }
-
 
 pub struct InferenceRequest<B: Backend> {
     pub prompt_len: usize,
@@ -92,7 +86,7 @@ pub struct Llama<B: Backend, T: Tokenizer> {
     /// Llama decoder-only transformer.
     pub model: Transformer<B>,
     /// Key-value cache for each transformer block.
-  //  pub cache: Vec<KeyValueCache<B>>,
+    //  pub cache: Vec<KeyValueCache<B>>,
     /// Rotary positional encoding (RoPE).
     pub rope: RotaryEncoding<B>,
     pub device: Device<B>,
@@ -121,7 +115,11 @@ impl<B: Backend, T: Tokenizer> Llama<B, T> {
         }
     }
 
-    fn prefill(&mut self, state: &mut RequestState<B>, cache: &mut Vec<KeyValueCache<B>>) -> Tensor<B, 2> {
+    fn prefill(
+        &mut self,
+        state: &mut RequestState<B>,
+        cache: &mut Vec<KeyValueCache<B>>,
+    ) -> Tensor<B, 2> {
         let x = state
             .tokens
             .clone()
@@ -141,7 +139,11 @@ impl<B: Backend, T: Tokenizer> Llama<B, T> {
 
         next_token_logits
     }
-    fn decode_step(&mut self, state: &mut RequestState<B>, cache: &mut Vec<KeyValueCache<B>>) -> Tensor<B, 2> {
+    fn decode_step(
+        &mut self,
+        state: &mut RequestState<B>,
+        cache: &mut Vec<KeyValueCache<B>>,
+    ) -> Tensor<B, 2> {
         let x = state
             .tokens
             .clone()
@@ -292,16 +294,16 @@ impl<B: Backend, T: Tokenizer> Llama<B, T> {
 
     /// Reset the model state (used between generations)
     /*
-    pub fn reset(&mut self,  cache: &mut Vec<KeyValueCache<B>>) {
-        cache.iter_mut().for_each(|cache| cache.reset());
-    }
-*/
+        pub fn reset(&mut self,  cache: &mut Vec<KeyValueCache<B>>) {
+            cache.iter_mut().for_each(|cache| cache.reset());
+        }
+    */
     pub fn generate_from_tokens(
         &mut self,
         state: &mut RequestState<B>,
         sampler: &mut Sampler,
         temperature: f64,
-        cache: &mut Vec<KeyValueCache<B>>
+        cache: &mut Vec<KeyValueCache<B>>,
     ) -> anyhow::Result<GenerationOutput> {
         let now = Instant::now();
 

@@ -1,7 +1,7 @@
 [package]
 authors = ["guillaumelagrange <lagrange.guillaume.1@gmail.com>"]
 license = "MIT OR Apache-2.0"
-name = "llama-burn"
+name = "toy-llm"
 version = "0.1.0"
 edition = "2021"
 description = "Llama 3 large language model with Burn"
@@ -10,10 +10,12 @@ default-run = "run"
 [features]
 default = ["pretrained"]
 pretrained = ["burn/network", "dep:dirs"]
+#qwen-vision = ["dep:image"]
 
 # llama3 = ["dep:tiktoken-rs", "dep:rustc-hash", "dep:base64"]
 llama3 = []
-tiny = ["dep:tokenizers"]
+#tiny = ["tokenizers"]
+tiny = []
 
 # Example feature flags (backend selection)
 # personal implementation of the backend for burn
@@ -43,7 +45,7 @@ serde_json = "1.0"
 
 ###
 # burn = { path = "../../burn/crates/burn", default-features = false, features = ["std"] }
-burn = { version = "0.20.1", default-features = false, features = ["std"] }
+burn = { version = "0.20.1", default-features = false, features = ["std", "store"] }
 burn-store = { version = "0.20.1", features = ["std", "burnpack"] }
 
 itertools = { version = "0.12.1", default-features = false, features = [
@@ -61,21 +63,22 @@ serde = { version = "1.0.192", default-features = false, features = [
 # rustc-hash = { version = "1.1.0", optional = true }
 
 
-tiktoken-rs = { version = "0.5.8"}
+tiktoken-rs = { version = "0.5.8" }
 base64 = { version = "0.22.1" }
-rustc-hash = { version = "1.1.0"}
+rustc-hash = { version = "1.1.0" }
 
 
 # SentencePiece tokenizer (tiny llama / llama 2)
 tokenizers = { version = "0.19.1", default-features = false, features = [
     "onig",
-], optional = true }
-
-rand = { version = "0.8.5", default-features = false, features = [
-    "alloc",
-    "std_rng",
 ] }
-tokio = { version = "1.51.*", features= ["full"] }
+#], optional = true }
+#rand = { version = "0.8.5", default-features = false, features = [
+#    "alloc",
+#    "std_rng",
+#] }
+rand = { version = "0.8.5", features = ["std_rng"] }
+tokio = { version = "1.51.*", features = ["full"] }
 anyhow = "1.0.102"
 axum = "0.8.9"
 tokenizer = "0.1.2" # std_rng is for no_std
@@ -83,6 +86,18 @@ tracing = "0.1.44"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 uuid = { version = "1.21.0", features = ["v4", "serde"] }
 toml = "0.9.12+spec-1.1.0"
+hf-hub = "0.5.0"
+clap = { version = "4.6.1", features = ["derive"] }
+urlencoding = "2.1.3"
+ureq = "3.3.0"
+
+#  qwen dependency
+safetensors = "0.7"
+half = { version = "2.4", features = ["serde"] }
+burn-mlx = { git = "https://github.com/eidolons-ai/burn-mlx.git", branch = "main", optional = true }
+#image = { version = "0.25", optional = true, default-features = false, features = ["png", "jpeg"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+criterion = "0.8.2"
 
 [dev-dependencies]
 # burn = { path = "../../burn/crates/burn", default-features = false, features = ["std"] }
@@ -96,11 +111,23 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [[bin]]
 name = "run"
-path= "src/bin/run.rs"
-required-features = []
+path = "src/bin/run.rs"
+required-features = ["client-dummy"]
 
 
 [[bin]]
 name = "load"
-path= "src/bin/load.rs"
+path = "src/bin/load.rs"
 required-features = []
+
+
+[[bin]]
+name = "load-hf"
+path = "src/bin/load_hf.rs"
+required-features = []
+
+[[bin]]
+name = "check"
+path = "src/bin/check.rs"
+required-features = []
+

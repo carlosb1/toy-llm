@@ -1,6 +1,6 @@
-use burn::prelude::{Backend, Device};
 use crate::models::llama::llamaconfig::LlamaConfig;
-use crate::models::transformer::KeyValueCache;
+use crate::models::llama::transformer::KeyValueCache;
+use burn::prelude::{Backend, Device};
 
 #[derive(Debug, Clone)]
 pub struct CacheConfig {
@@ -46,7 +46,6 @@ impl CacheConfig {
             })
             .collect::<Vec<_>>();
         cache
-
     }
 }
 
@@ -58,9 +57,7 @@ impl From<LlamaConfig> for CacheConfig {
         let max_seq_len = config.max_seq_len;
         let d_model = config.d_model;
 
-        let num_key_value_heads = config
-            .num_key_value_heads
-            .unwrap_or(num_attention_heads);
+        let num_key_value_heads = config.num_key_value_heads.unwrap_or(num_attention_heads);
 
         Self {
             num_attention_heads,
@@ -72,4 +69,3 @@ impl From<LlamaConfig> for CacheConfig {
         }
     }
 }
-

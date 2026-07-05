@@ -1,16 +1,15 @@
-use burn::{
-    config::Config,
-    nn::RotaryEncodingConfig,
-    tensor::{backend::Backend, Device, Tensor,
-    },
-};
+use crate::models::llama::cacheconfig::CacheConfig;
 use crate::models::llama::llama::Llama;
 #[cfg(feature = "pretrained")]
 #[allow(unused_imports)]
-use crate::models::pretrained::{self, ModelMeta};
+use crate::models::llama::pretrained::{self, ModelMeta};
+use crate::models::llama::transformer::TransformerConfig;
 use crate::tokenizer::Tokenizer;
-use crate::models::cacheconfig::CacheConfig;
-use crate::models::transformer::TransformerConfig;
+use burn::{
+    config::Config,
+    nn::RotaryEncodingConfig,
+    tensor::{backend::Backend, Device, Tensor},
+};
 
 #[derive(Config, Debug)]
 pub struct LlamaConfig {
@@ -80,7 +79,6 @@ impl LlamaConfig {
         )
     }
 
-
     /// Initialize a new [Llama] module.
     pub fn init<B: Backend, T: Tokenizer>(
         &self,
@@ -96,16 +94,15 @@ impl LlamaConfig {
             self.num_attention_heads,
             num_key_value_heads,
         )
-            .with_max_seq_len(self.max_seq_len)
-            .with_norm_eps(self.norm_eps)
-            .init(device);
-
+        .with_max_seq_len(self.max_seq_len)
+        .with_norm_eps(self.norm_eps)
+        .init(device);
 
         let rope = RotaryEncodingConfig::new(
             self.max_seq_len * 2,
             self.d_model / self.num_attention_heads,
         )
-            .with_theta(self.rope.theta);
+        .with_theta(self.rope.theta);
 
         let rope = if let Some(scaling) = &self.rope.scaled {
             let freq_scaling_fn = move |x| scaling.freq_scaling_by_parts(x);
