@@ -227,6 +227,7 @@ where
     /* setting up memory */
     let start_time = Instant::now();
     let token_tensors = create_token_tensors(&state, prompt, max_new_tokens);
+    profiler.set_input_tokens(token_tensors.prompt_len);
     let elapsed_time = start_time.elapsed();
     println!("Time elapsed: {:?}", elapsed_time);
 
@@ -256,6 +257,26 @@ where
             tracing::error!("failed to generate output from worker {:?}", e);
             StatusCode::BAD_REQUEST
         })?;
+
+    if let Some(profiler) = output.profiler {
+        let metrics = profiler.metrics();
+        tracing::info!(
+            prompt_tokens = metrics.prompt_tokens,
+            generated_tokens = metrics.generated_tokens,
+            queue_ms = metrics
+                .queue_duration
+                .map(|duration| duration.as_secs_f64() * 1_000.0),
+            prefill_ms = metrics
+                .prefill_duration
+                .map(|duration| duration.as_secs_f64() * 1_000.0),
+            ttft_ms = metrics
+                .time_to_first_token
+                .map(|duration| duration.as_secs_f64() * 1_000.0),
+            decode_tps = metrics.decode_tokens_per_second,
+            "completion generation completed"
+        );
+        state.metrics.record_success(&metrics);
+    }
 
     let id = Uuid::new_v4();
     let created = SystemTime::now()
@@ -343,9 +364,9 @@ where
         }
     };
 
-    let profiler = GenerationProfiler::new();
-
+    let mut profiler = GenerationProfiler::new();
     let token_tensors = create_token_tensors(&state, prompt_tokens, max_new_tokens);
+    profiler.set_input_tokens(token_tensors.prompt_len);
     let (response_tx, response_rx) = oneshot::channel();
     let inference_request = InferenceRequest::from_tensors(
         token_tensors,
@@ -377,6 +398,25 @@ where
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
+    if let Some(profiler) = output.profiler {
+        let metrics = profiler.metrics();
+        tracing::info!(
+            prompt_tokens = metrics.prompt_tokens,
+            generated_tokens = metrics.generated_tokens,
+            queue_ms = metrics
+                .queue_duration
+                .map(|duration| duration.as_secs_f64() * 1_000.0),
+            prefill_ms = metrics
+                .prefill_duration
+                .map(|duration| duration.as_secs_f64() * 1_000.0),
+            ttft_ms = metrics
+                .time_to_first_token
+                .map(|duration| duration.as_secs_f64() * 1_000.0),
+            decode_tps = metrics.decode_tokens_per_second,
+            "completion generation completed"
+        );
+        state.metrics.record_success(&metrics);
+    }
     let created = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|error| {
@@ -408,7 +448,6 @@ where
         }],
 
         usage: None,
-
         system_fingerprint: None,
     };
 

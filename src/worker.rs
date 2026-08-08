@@ -55,7 +55,7 @@ pub async fn burn_worker<B: Backend>(
 
         profile!(req.profiler, worker_finished);
 
-        let output = match result {
+        let mut output = match result {
             Ok(output) => output,
             Err(e) => {
                 tracing::error!("generation error: {}", e);
@@ -63,6 +63,10 @@ pub async fn burn_worker<B: Backend>(
                 continue;
             }
         };
+
+        if req.profiler.is_some() {
+            output.profiler = req.profiler;
+        }
 
         let _ = response_tx.send(Ok(output));
     }

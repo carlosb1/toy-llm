@@ -1,17 +1,22 @@
-use async_openai::types::chat::FinishReason;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
+#[derive(Debug, Clone)]
 pub struct GenerationMetrics {
-    pub queue_time: Duration,
-    pub ttft: Duration,
-    pub generation_time: Duration,
-    pub total_time: Duration,
-
     pub prompt_tokens: usize,
     pub generated_tokens: usize,
 
-    pub finish_reason: FinishReason,
+    pub preprocessing_duration: Option<Duration>,
+    pub queue_duration: Option<Duration>,
+    pub prefill_duration: Option<Duration>,
+    pub time_to_first_token: Option<Duration>,
+    pub decode_duration: Option<Duration>,
+    pub worker_duration: Option<Duration>,
+    pub request_duration: Option<Duration>,
+
+    pub prefill_tokens_per_second: Option<f64>,
+    pub decode_tokens_per_second: Option<f64>,
+    pub engine_time_to_first_token: Option<Duration>,
 }
 
 #[derive(Debug, Default)]
@@ -75,23 +80,37 @@ pub struct MetricsSnapshot {
     pub generated_tokens: u64,
 }
 
+#[derive(Debug)]
 pub struct GenerationProfiler {
+    // Petición completa
     request_started_at: Instant,
     request_finished_at: Option<Instant>,
 
+    // Preparación y cola
     queued_at: Option<Instant>,
     worker_started_at: Option<Instant>,
 
+    // Prefill y primer token
     prefill_started_at: Option<Instant>,
     prefill_finished_at: Option<Instant>,
     first_token_at: Option<Instant>,
-    last_token_at: Option<Instant>,
-    worker_finished_at: Option<Instant>,
 
-    input_tokens: usize,
-    output_tokens: usize,
+    // Decode
     decode_started_at: Option<Instant>,
     decode_finished_at: Option<Instant>,
+
+    // Worker
+    worker_finished_at: Option<Instant>,
+
+    // Contadores
+    input_tokens: usize,
+    output_tokens: usize,
+}
+
+impl Default for GenerationProfiler {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl GenerationProfiler {
@@ -106,14 +125,14 @@ impl GenerationProfiler {
             prefill_started_at: None,
             prefill_finished_at: None,
             first_token_at: None,
-            last_token_at: None,
+
+            decode_started_at: None,
+            decode_finished_at: None,
+
             worker_finished_at: None,
 
             input_tokens: 0,
             output_tokens: 0,
-
-            decode_started_at: None,
-            decode_finished_at: None,
         }
     }
 
@@ -137,28 +156,16 @@ impl GenerationProfiler {
         self.prefill_finished_at = Some(Instant::now());
     }
 
-    /// Marca cuándo el motor ha producido su primera decisión.
+    /// Registra la primera decisión producida por el modelo.
     ///
-    /// Puede ser un token normal o un token de parada.
+    /// Puede ser un token de salida o un token de parada.
     pub fn first_token_sampled(&mut self) {
         self.first_token_at.get_or_insert_with(Instant::now);
     }
 
-    /// Contabiliza un token incorporado a la salida.
+    /// Registra un token añadido realmente a la salida.
     pub fn output_token_generated(&mut self) {
-        let now = Instant::now();
-
-        self.first_token_at.get_or_insert(now);
-        self.last_token_at = Some(now);
         self.output_tokens += 1;
-    }
-
-    pub fn worker_finished(&mut self) {
-        self.worker_finished_at = Some(Instant::now());
-    }
-
-    pub fn request_finished(&mut self) {
-        self.request_finished_at = Some(Instant::now());
     }
 
     pub fn decode_started(&mut self) {
@@ -169,11 +176,53 @@ impl GenerationProfiler {
         self.decode_finished_at = Some(Instant::now());
     }
 
+    pub fn worker_finished(&mut self) {
+        self.worker_finished_at = Some(Instant::now());
+    }
+
+    pub fn request_finished(&mut self) {
+        self.request_finished_at = Some(Instant::now());
+    }
+
+    pub fn preprocessing_duration(&self) -> Option<Duration> {
+        self.queued_at
+            .map(|queued| queued.duration_since(self.request_started_at))
+    }
+
+    pub fn queue_duration(&self) -> Option<Duration> {
+        duration_between(self.queued_at, self.worker_started_at)
+    }
+
+    pub fn prefill_duration(&self) -> Option<Duration> {
+        duration_between(self.prefill_started_at, self.prefill_finished_at)
+    }
+
+    /// TTFT desde que se creó el profiler.
+    pub fn time_to_first_token(&self) -> Option<Duration> {
+        self.first_token_at
+            .map(|first| first.duration_since(self.request_started_at))
+    }
+
+    /// TTFT interno del motor, sin preprocesamiento ni cola.
+    pub fn engine_time_to_first_token(&self) -> Option<Duration> {
+        duration_between(self.worker_started_at, self.first_token_at)
+    }
+
     pub fn decode_duration(&self) -> Option<Duration> {
-        Some(
-            self.decode_finished_at?
-                .duration_since(self.decode_started_at?),
-        )
+        duration_between(self.decode_started_at, self.decode_finished_at)
+    }
+
+    pub fn worker_duration(&self) -> Option<Duration> {
+        duration_between(self.worker_started_at, self.worker_finished_at)
+    }
+
+    pub fn request_duration(&self) -> Option<Duration> {
+        self.request_finished_at
+            .map(|finished| finished.duration_since(self.request_started_at))
+    }
+
+    pub fn prefill_tokens_per_second(&self) -> Option<f64> {
+        rate(self.input_tokens, self.prefill_duration()?)
     }
 
     pub fn decode_tokens(&self) -> usize {
@@ -181,15 +230,44 @@ impl GenerationProfiler {
     }
 
     pub fn decode_tokens_per_second(&self) -> Option<f64> {
-        let tokens = self.decode_tokens();
-        let seconds = self.decode_duration()?.as_secs_f64();
-
-        if tokens == 0 || seconds == 0.0 {
-            return None;
-        }
-
-        Some(tokens as f64 / seconds)
+        rate(self.decode_tokens(), self.decode_duration()?)
     }
+
+    pub fn metrics(&self) -> GenerationMetrics {
+        GenerationMetrics {
+            prompt_tokens: self.input_tokens,
+            generated_tokens: self.output_tokens,
+
+            preprocessing_duration: self.preprocessing_duration(),
+            queue_duration: self.queue_duration(),
+            prefill_duration: self.prefill_duration(),
+            time_to_first_token: self.time_to_first_token(),
+            engine_time_to_first_token: self.engine_time_to_first_token(),
+            decode_duration: self.decode_duration(),
+            worker_duration: self.worker_duration(),
+            request_duration: self.request_duration(),
+
+            prefill_tokens_per_second: self.prefill_tokens_per_second(),
+            decode_tokens_per_second: self.decode_tokens_per_second(),
+        }
+    }
+}
+
+fn duration_between(start: Option<Instant>, finish: Option<Instant>) -> Option<Duration> {
+    match (start, finish) {
+        (Some(start), Some(finish)) => finish.checked_duration_since(start),
+        _ => None,
+    }
+}
+
+fn rate(tokens: usize, duration: Duration) -> Option<f64> {
+    let seconds = duration.as_secs_f64();
+
+    if tokens == 0 || seconds == 0.0 {
+        return None;
+    }
+
+    Some(tokens as f64 / seconds)
 }
 
 #[macro_export]

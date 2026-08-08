@@ -32,6 +32,8 @@ pub struct GenerationOutput {
     pub tokens: usize,
     /// The time it took to produce the output tokens (generation + decoding).
     pub time: f64,
+
+    pub profiler: Option<GenerationProfiler>,
 }
 
 pub struct TokenTensor<B: Backend> {
@@ -204,6 +206,7 @@ impl<B: Backend, T: Tokenizer> Llama<B, T> {
             text: generated,
             tokens: state.num_generated_tokens,
             time: elapsed,
+            profiler: None,
         }
     }
     fn append_token(&self, state: &mut RequestState<B>, next_token: Tensor<B, 1, Int>) {
@@ -304,6 +307,8 @@ impl<B: Backend, T: Tokenizer> Llama<B, T> {
             cache.iter_mut().for_each(|cache| cache.reset());
         }
     */
+
+    // TODO decouple
     pub fn generate_from_tokens(
         &mut self,
         state: &mut RequestState<B>,
