@@ -1,8 +1,6 @@
 use crate::models::llama::cacheconfig::CacheConfig;
-use crate::models::llama::llama::Llama;
 use crate::models::llama::loader::ModelKind;
-#[allow(unused_imports)]
-use crate::models::llama::pretrained::{self, ModelMeta};
+use crate::models::llama::model::Llama;
 use crate::models::llama::sampling::Sampler;
 #[cfg(feature = "llama3")]
 use crate::tokenizer::Tiktoken;
@@ -30,26 +28,25 @@ impl Default for GenerationConfig {
         }
     }
 }
-
+#[cfg(feature = "llama3")]
 pub struct BurnEngineLlama<B: Backend> {
     pub llama: Llama<B, Tiktoken>, // TODO decoupled
-    pub sampler: Sampler,
-    pub temperature: f64,
-    pub sample_len: usize,
+    pub default_generation_config: GenerationConfig,
     pub cache_config: CacheConfig,
 }
-
+#[cfg(feature = "llama3")]
 impl<B: Backend> BurnEngineLlama<B> {
     pub fn new(
         llama: Llama<B, Tiktoken>,
-        generation_config: GenerationConfig,
+        default_generation_config: GenerationConfig,
         cache_config: CacheConfig,
     ) -> Self {
         Self {
             llama,
-            sampler: generation_config.sampler,
-            temperature: generation_config.temperature,
-            sample_len: generation_config.sample_len,
+            default_generation_config,
+            //  sampler: generation_config.sampler,
+            //  temperature: generation_config.temperature,
+            //  sample_len: generation_config.sample_len,
             cache_config,
         }
     }
@@ -59,6 +56,7 @@ impl<B: Backend> BurnEngineLlama<B> {
         let max_seq_len = 128;
         let sample_len = 65;
         let sampler = Sampler::Argmax;
+        // TODO, It hardcod which model to choose
         let (llama, cache_config) = ModelKind::Llama3_2_3B
             .load(max_seq_len, device)
             .map_err(|err| anyhow::anyhow!("Failed to load Llama model: {}", err))?;

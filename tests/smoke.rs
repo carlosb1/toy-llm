@@ -1,10 +1,9 @@
 use burn::backend::ndarray::NdArrayDevice;
 use burn::backend::NdArray;
-use toy_llm::models::qwen::model::{QuantizationMode, Qwen3};
+use toy_llm::models::qwen::loader::initialize_cache;
+use toy_llm::models::qwen::model::QuantizationMode;
 use toy_llm::models::qwen::sampling::Sampler;
 use toy_llm::models::qwen::tokenizer::Qwen3Tokenizer;
-
-type B = NdArray;
 
 fn model_dir() -> std::path::PathBuf {
     let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -19,9 +18,17 @@ fn tokenizer_path() -> std::path::PathBuf {
     model_dir().join("tokenizer.json")
 }
 
+type B = NdArray;
 #[test]
 #[ignore]
 fn smoke_gguf_generate() {
+    tracing::subscriber::set_global_default(
+        tracing_subscriber::FmtSubscriber::builder()
+            .with_env_filter("info")
+            .finish(),
+    )
+    .expect("Failed to set global default subscriber");
+
     let gguf = gguf_path();
     let tok = tokenizer_path();
     if !gguf.exists() || !tok.exists() {
@@ -36,21 +43,33 @@ fn smoke_gguf_generate() {
     let tokenizer = Qwen3Tokenizer::new(&tok).expect("Failed to load tokenizer");
 
     eprintln!("Loading model (f32, no quantization)...");
-    let mut model = Qwen3::<B>::from_gguf(&gguf, 2048, QuantizationMode::None, &device)
-        .expect("Failed to load GGUF model");
+    let mut model =
+        toy_llm::models::qwen::loader::from_gguf::<B>(&gguf, 2048, QuantizationMode::None, &device)
+            .expect("Failed to load GGUF model");
 
     let prompt = tokenizer.apply_chat_template(
         "You are a helpful assistant.",
         "What is the capital of France?",
     );
 
+    let caches = initialize_cache(
+        model.config.num_hidden_layers,
+        model.config.num_key_value_heads,
+        model.max_seq_len,
+        model.config.head_dim,
+        &device.clone(),
+    );
+
     let mut sampler = Sampler::Argmax;
     let result = model
-        .generate(&tokenizer, &prompt, 32, 0.0, &mut sampler)
+        .generate(caches, &tokenizer, &prompt, 32, 0.0, &mut sampler)
         .expect("Generation failed");
 
     eprintln!("Generated text: {:?}", result.text);
     eprintln!("Tokens: {}, Time: {:.2}s", result.tokens, result.time);
+
+    tracing::info!("generated text: {:?}", result.text);
+    tracing::info!("Tokens: {}, Time: {:.2}s", result.tokens, result.time);
 
     assert!(
         !result.text.is_empty(),

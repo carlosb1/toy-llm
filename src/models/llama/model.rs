@@ -11,11 +11,14 @@ use burn::{
     },
 };
 
-#[cfg(feature = "pretrained")]
-use crate::models::llama::pretrained::ModelMeta;
 use crate::models::llama::sampling::Sampler;
 use crate::models::llama::transformer::{KeyValueCache, Transformer};
+//#[cfg(feature = "pretrained")]
+//use crate::models::pretrained::ModelMeta;
 
+use crate::engine::GenerationConfig;
+use crate::profile;
+use crate::profiler::GenerationProfiler;
 use crate::tokenizer::Tokenizer;
 #[cfg(feature = "import")]
 use burn_store::{PyTorchToBurnAdapter, PytorchStore, SafetensorsStore};
@@ -43,26 +46,26 @@ pub struct InferenceRequest<B: Backend> {
     pub tokens: Tensor<B, 1, Int>,
     pub stop_tokens: Tensor<B, 1, Int>,
     pub input_pos: Tensor<B, 1, Int>,
-    pub temperature: f64,
-    pub sample_len: usize,
+    pub generation_config: Option<GenerationConfig>,
+    pub profiler: Option<GenerationProfiler>,
     pub response_tx: oneshot::Sender<anyhow::Result<GenerationOutput>>,
 }
 
 impl<B: Backend> InferenceRequest<B> {
     pub fn from_tensors(
         tensors: TokenTensor<B>,
-        sample_len: usize,
-        temperature: f64,
+        generation_config: Option<GenerationConfig>,
         response_tx: oneshot::Sender<anyhow::Result<GenerationOutput>>,
+        profiler: Option<GenerationProfiler>,
     ) -> Self {
         Self {
             prompt_len: tensors.prompt_len,
             tokens: tensors.tokens,
             stop_tokens: tensors.stop_tokens,
             input_pos: tensors.input_pos,
-            temperature,
-            sample_len,
+            generation_config,
             response_tx,
+            profiler,
         }
     }
 }
@@ -212,6 +215,7 @@ impl<B: Backend, T: Tokenizer> Llama<B, T> {
         state.num_generated_tokens += 1;
     }
 
+    /*
     #[allow(clippy::single_range_in_vec_init)]
     pub fn generate(
         &mut self,
@@ -252,6 +256,8 @@ impl<B: Backend, T: Tokenizer> Llama<B, T> {
         let elapsed = now.elapsed().as_secs_f64();
         self.finalize_output(state, elapsed)
     }
+
+     */
 
     /// Encode a string into a tensor of tokens.
     pub fn tokenize(&self, text: &str) -> Tensor<B, 1, Int> {
@@ -304,6 +310,7 @@ impl<B: Backend, T: Tokenizer> Llama<B, T> {
         sampler: &mut Sampler,
         temperature: f64,
         cache: &mut Vec<KeyValueCache<B>>,
+        profiler: &mut Option<GenerationProfiler>,
     ) -> anyhow::Result<GenerationOutput> {
         let now = Instant::now();
 
@@ -312,8 +319,17 @@ impl<B: Backend, T: Tokenizer> Llama<B, T> {
             "Starting prefill generation with prompt length: {}",
             state.prompt_len
         );
+        // profiling
+
+        profile!(profiler, prefill_started);
         let logits = self.prefill(state, cache);
+        // profiling
+        profile!(profiler, prefill_finished);
+
         let next_token = self.sample_next_token(logits, temperature, sampler);
+
+        profile!(profiler, first_token_sampled);
+        profile!(profiler, output_token_generated);
 
         if !self.should_stop(next_token.clone(), &state.stop_tokens) {
             self.append_token(state, next_token);
@@ -335,9 +351,11 @@ impl<B: Backend, T: Tokenizer> Llama<B, T> {
                 "Decoding step with input position: {:?} and stop tokens: {:?}\r",
                 state.input_pos, state.stop_tokens
             );
-            let logits = self.decode_step(state, cache);
-            let next_token = self.sample_next_token(logits, temperature, sampler);
 
+            profile!(profiler, decode_started);
+            let logits = self.decode_step(state, cache);
+            profile!(profiler, decode_finished);
+            let next_token = self.sample_next_token(logits, temperature, sampler);
             println!("Sampled next token: {:?}\r", next_token);
             if self.should_stop(next_token.clone(), &state.stop_tokens) {
                 state.is_finished = true;
@@ -345,6 +363,7 @@ impl<B: Backend, T: Tokenizer> Llama<B, T> {
             }
 
             self.append_token(state, next_token);
+            profile!(profiler, output_token_generated);
         }
 
         let elapsed = now.elapsed().as_secs_f64();

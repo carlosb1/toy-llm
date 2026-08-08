@@ -1,9 +1,9 @@
 use crate::models::llama::cacheconfig::CacheConfig;
-use crate::models::llama::llama::{check_context_length, Llama};
 use crate::models::llama::llamaconfig::LlamaConfig;
-use crate::models::llama::pretrained::Pretrained;
-#[allow(unused_imports)]
-use crate::models::llama::pretrained::{self, ModelMeta};
+use crate::models::llama::model::{check_context_length, Llama};
+use crate::models::pretrained::Pretrained;
+//#[allow(unused_imports)]
+//use crate::models::llama::pretrained::{self, ModelMeta};
 #[cfg(feature = "llama3")]
 use crate::tokenizer::Tiktoken;
 use crate::tokenizer::Tokenizer;
@@ -92,6 +92,7 @@ pub fn resolve_and_download_model_files(
             name: pretrained_manifest.name.clone(),
             model: pretrained_manifest.model.clone(),
             tokenizer: pretrained_manifest.tokenizer.clone(),
+            tokenizer_config: pretrained_manifest.tokenizer_config.clone(),
         };
 
         let checkpoint_path = pretrained
@@ -143,6 +144,7 @@ pub struct PretrainedManifest {
     pub name: String,
     pub model: String,
     pub tokenizer: String,
+    pub tokenizer_config: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

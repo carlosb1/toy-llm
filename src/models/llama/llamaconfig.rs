@@ -1,8 +1,8 @@
 use crate::models::llama::cacheconfig::CacheConfig;
-use crate::models::llama::llama::Llama;
+use crate::models::llama::model::Llama;
 #[cfg(feature = "pretrained")]
 #[allow(unused_imports)]
-use crate::models::llama::pretrained::{self, ModelMeta};
+use crate::models::llama::pretrained::{self};
 use crate::models::llama::transformer::TransformerConfig;
 use crate::tokenizer::Tokenizer;
 use burn::{

@@ -1,10 +1,12 @@
 #![doc = include_str!("../README.md")]
 #![cfg_attr(docsrs, feature(doc_cfg))]
-
+pub mod api;
+pub mod app;
 pub mod backend;
 pub mod engine;
-pub mod http;
 pub mod models;
+pub mod profiler;
+pub mod prompt;
 pub mod tokenizer;
 pub mod worker;
 

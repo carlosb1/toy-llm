@@ -1,23 +1,27 @@
+use crate::api::utils::create_token_tensors;
+use crate::engine::GenerationConfig;
+use crate::models::llama::model::{InferenceRequest, TokenTensor};
+use crate::models::llama::sampling::Sampler;
+use crate::models::registry_service::RegistryService;
+use crate::models::resolver_service::ModelResolverService;
+use crate::profiler::{GenerationProfiler, MetricsRegistry};
+pub use crate::prompt::PromptProcessor;
+use crate::tokenizer::Tokenizer;
 use axum::extract::State;
 use axum::http::StatusCode;
-use axum::Json;
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
+use axum::{Json, Router};
 use burn::prelude::{Backend, Device, Int, Shape, TensorData};
 use burn::Tensor;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::Instant;
 use uuid::Uuid;
-use crate::models::llama::llama::{InferenceRequest, TokenTensor};
-use crate::tokenizer::Tokenizer;
 
-
-
-
-#[derive(Deserialize)]
-#[derive(Debug)]
+#[derive(Deserialize, Debug)]
 pub struct GenerateHttpRequest {
     prompt: String,
     sample_len: usize,
@@ -30,7 +34,6 @@ pub struct GenerateHttpResponse {
     tokens: usize,
     time: f64,
 }
-
 
 // ADD THIS - Custom error type for Axum
 #[derive(Debug)]
@@ -50,19 +53,17 @@ impl IntoResponse for AppError {
     }
 }
 
-
 impl From<anyhow::Error> for AppError {
     fn from(err: anyhow::Error) -> Self {
         AppError::Internal(err.to_string())
     }
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GenerateState {
     id: Uuid,
     status: String,
-    generated: String
+    generated: String,
 }
 
 impl GenerateState {
@@ -76,19 +77,17 @@ impl GenerateState {
     pub fn update(&mut self, new_text: &str) {
         self.status = "generated".to_string();
         self.generated.push_str(new_text);
-
     }
 }
 
-
 #[derive(Clone)]
-pub struct TokenizerHandle<B: Backend, T: Tokenizer>  {
+pub struct TokenizerHandle<B: Backend, T: Tokenizer> {
     /// The tokenizer.
     pub tokenizer: T,
     pub device: Device<B>,
 }
 
-impl<B: Backend, T: Tokenizer>  TokenizerHandle<B, T> {
+impl<B: Backend, T: Tokenizer> TokenizerHandle<B, T> {
     pub fn tokenize(&self, text: &str) -> Tensor<B, 1, Int> {
         let bos = !cfg!(feature = "tiny"); // TinyLlama Chat doesn't prepend BOS token with the chat format
         let tokens = self.tokenizer.encode(text, bos, false);
@@ -98,39 +97,15 @@ impl<B: Backend, T: Tokenizer>  TokenizerHandle<B, T> {
     }
 }
 
-
 #[derive(Clone)]
 pub struct AppState<B: Backend, T: Tokenizer> {
     pub tx: mpsc::Sender<InferenceRequest<B>>,
-    pub tokenizer_handler: TokenizerHandle<B,T>,
-
+    pub tokenizer_handler: Arc<TokenizerHandle<B, T>>,
+    pub registry: RegistryService,
+    pub resolver: ModelResolverService,
+    pub prompter: Arc<PromptProcessor>,
+    pub metrics: Arc<MetricsRegistry>,
 }
-
-
-pub fn create_token_tensors<B: Backend, T: Tokenizer>(state: &AppState<B, T>, req: &GenerateHttpRequest) -> TokenTensor<B> {
-    let input_tokens = state.tokenizer_handler.tokenize(req.prompt.as_str());
-    let prompt_len = input_tokens.dims()[0];
-
-    tracing::info!(
-        prompt_tokens = prompt_len,
-        total_tokens = prompt_len + req.sample_len,
-        "prompt tokenized"
-    );
-
-    let mut tokens = Tensor::<B, 1, Int>::empty([prompt_len + req.sample_len], &state.tokenizer_handler.device);
-    tokens = tokens.slice_assign([0..prompt_len], input_tokens);
-
-    tracing::info!(
-        "input tensor prepared with shape {:?}",
-        tokens.shape()
-    );
-    let input_pos = Tensor::<B, 1, Int>::arange(0..prompt_len as i64, &state.tokenizer_handler.device);
-    let stop_tokens = Tensor::from_ints(state.tokenizer_handler.tokenizer.stop_ids().as_slice(), &state.tokenizer_handler.device);
-    let token_tensors = TokenTensor{prompt_len, tokens, input_pos, stop_tokens};
-    token_tensors
-}
-
-
 async fn generate_handler<B: Backend, T: Tokenizer>(
     State(state): State<AppState<B, T>>,
     Json(req): Json<GenerateHttpRequest>,
@@ -139,7 +114,6 @@ where
     B: Backend + Send + Sync + 'static,
     T: Tokenizer + Clone + Send + Sync + 'static,
 {
-
     tracing::info!(
         sample_len = req.sample_len,
         temperature = req.temperature,
@@ -147,18 +121,31 @@ where
         "generation request received"
     );
 
+    let generation_config = GenerationConfig {
+        sampler: Sampler::Argmax,
+        temperature: req.temperature,
+        sample_len: req.sample_len,
+        top_p: None,
+        top_k: None,
+        repetition_penalty: None,
+    };
+
+    let profiler = GenerationProfiler::new();
+
     /* setting up memory */
     let start_time = Instant::now();
-    let token_tensors = create_token_tensors(&state, &req);
+    let token_tensors = create_token_tensors(&state, req.prompt.clone(), req.sample_len);
     let elapsed_time = start_time.elapsed();
     println!("Time elapsed: {:?}", elapsed_time);
     let (response_tx, response_rx) = oneshot::channel();
-    let inference_req = InferenceRequest::from_tensors(token_tensors, req.sample_len, req.temperature, response_tx);
-
-
-    tracing::info!(
-        "sending inference request to worker"
+    let inference_req = InferenceRequest::from_tensors(
+        token_tensors,
+        Some(generation_config),
+        response_tx,
+        Some(profiler),
     );
+
+    tracing::info!("sending inference request to worker");
 
     state
         .tx
@@ -172,7 +159,6 @@ where
         .map_err(|_| AppError::BadRequest("inference worker dropped response".to_string()))?
         .map_err(|e| AppError::BadRequest(e.to_string()))?;
 
-
     Ok(Json(GenerateHttpResponse {
         text: output.text,
         tokens: output.tokens,
@@ -180,13 +166,11 @@ where
     }))
 }
 
-pub fn router<B, T>(state: AppState<B, T>) -> axum::Router
+pub fn routes<B, T>() -> Router<AppState<B, T>>
 where
     B: Backend + Send + Sync + 'static,
     T: Tokenizer + Clone + Send + Sync + 'static,
     AppState<B, T>: Clone + Send + Sync + 'static,
 {
-    axum::Router::new()
-        .route("/generate", post(generate_handler::<B, T>))
-        .with_state(state)
+    Router::new().route("/generate", post(generate_handler::<B, T>))
 }

@@ -1,21 +1,9 @@
-use burn::prelude::Backend;
-use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
-use toy_llm::engine::BurnEngineLlama;
-use toy_llm::http;
-use toy_llm::http::{AppState, TokenizerHandle};
-use toy_llm::models::llama::llama::{InferenceRequest, RequestState};
-use toy_llm::worker::burn_worker;
-use tracing_subscriber::layer::SubscriberExt;
-use tracing_subscriber::util::SubscriberInitExt;
-
+use toy_llm::app::build_app;
 // backend definition
 use toy_llm::backend::selected;
-
-pub enum Message<B: Backend> {
-    Request(RequestState<B>),
-    Stop,
-}
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
 
 #[tokio::main]
 async fn main() {
@@ -32,30 +20,7 @@ async fn main() {
         selected::device()
     );
 
-    let (tx, rx) = mpsc::channel::<InferenceRequest<selected::Backend>>(128);
-
-    let engine = tokio::task::spawn_blocking(|| {
-        println!("Loading model...");
-        let device = selected::device();
-        BurnEngineLlama::load_with_device_tiktoken(&device).expect("Failed to load model")
-    })
-    .await
-    .expect("Failed to spawn blocking task");
-
-    let state = AppState {
-        tx,
-        tokenizer_handler: TokenizerHandle {
-            tokenizer: engine.llama.tokenizer.clone(),
-            device: selected::device(),
-        },
-    };
-    let cache_config = engine.cache_config.clone();
-
-    let engine = Arc::new(Mutex::new(engine));
-
-    tokio::spawn(burn_worker::<selected::Backend>(rx, engine, cache_config));
-
-    let app = http::router(state);
+    let app = build_app().await;
     let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
         .await
         .unwrap();

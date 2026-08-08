@@ -3,7 +3,7 @@ use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
-use crate::models::qwen::model::Qwen3Config;
+use crate::models::qwen::qwenconfig::Qwen3Config;
 use crate::models::qwen::vision::VisionConfig;
 
 const GGUF_MAGIC: u32 = 0x46554747; // "GGUF" as little-endian u32

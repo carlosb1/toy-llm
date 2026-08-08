@@ -9,6 +9,7 @@ use burn::tensor::TensorData;
 use serde::Deserialize;
 
 use crate::models::qwen::gguf;
+use crate::models::qwen::qwenconfig::Qwen3Config;
 use crate::models::qwen::sampling::Sampler;
 use crate::models::qwen::transformer::{
     build_causal_mask, AttentionKvCache, MoeConfig, RotaryEmbedding, Transformer,
@@ -36,244 +37,6 @@ pub enum QuantizationMode {
     /// NOTE: Currently broken on WGPU/Metal — Q4S matmul panics when M > 1 (i.e. during
     /// prefill). See https://github.com/tracel-ai/burn/issues/4492
     Int4,
-}
-
-/// Qwen3 model configuration matching HuggingFace `config.json`.
-#[derive(Debug, Clone, Deserialize)]
-pub struct Qwen3Config {
-    pub hidden_size: usize,
-    pub num_hidden_layers: usize,
-    pub num_attention_heads: usize,
-    pub num_key_value_heads: usize,
-    pub intermediate_size: usize,
-    pub vocab_size: usize,
-    pub max_position_embeddings: usize,
-    #[serde(default = "default_rms_norm_eps")]
-    pub rms_norm_eps: f64,
-    #[serde(default = "default_rope_theta")]
-    pub rope_theta: f64,
-    #[serde(default = "default_head_dim")]
-    pub head_dim: usize,
-    #[serde(default)]
-    pub tie_word_embeddings: bool,
-    // MoE fields (None for dense models)
-    #[serde(default)]
-    pub num_experts: Option<usize>,
-    #[serde(default)]
-    pub num_experts_per_tok: Option<usize>,
-    #[serde(default)]
-    pub moe_intermediate_size: Option<usize>,
-    #[serde(default)]
-    pub decoder_sparse_step: Option<usize>,
-    #[serde(default)]
-    pub norm_topk_prob: Option<bool>,
-    #[serde(default)]
-    pub mlp_only_layers: Option<Vec<usize>>,
-    #[serde(default = "default_bos_token_id")]
-    pub bos_token_id: u32,
-    #[serde(default = "default_eos_token_id")]
-    pub eos_token_id: u32,
-}
-
-fn default_rms_norm_eps() -> f64 {
-    1e-6
-}
-fn default_rope_theta() -> f64 {
-    1_000_000.0
-}
-fn default_head_dim() -> usize {
-    128
-}
-fn default_bos_token_id() -> u32 {
-    151643
-}
-fn default_eos_token_id() -> u32 {
-    151645
-}
-
-impl Qwen3Config {
-    /// Load config from a `config.json` file.
-    pub fn from_file(path: impl AsRef<Path>) -> Result<Self, Box<dyn std::error::Error>> {
-        let contents = std::fs::read_to_string(path)?;
-        let config: Self = serde_json::from_str(&contents)?;
-        Ok(config)
-    }
-
-    /// Returns true if this is a Mixture of Experts model.
-    pub fn is_moe(&self) -> bool {
-        self.num_experts.unwrap_or(0) > 1
-    }
-
-    /// Returns whether a given layer index uses MoE (vs dense FFN).
-    /// MoE layers are determined by `decoder_sparse_step` (every N-th layer is MoE)
-    /// and `mlp_only_layers` (explicit dense-only overrides).
-    pub fn is_moe_layer(&self, layer_idx: usize) -> bool {
-        if !self.is_moe() {
-            return false;
-        }
-        // Check if this layer is in the dense-only override list
-        if let Some(ref dense_layers) = self.mlp_only_layers {
-            if dense_layers.contains(&layer_idx) {
-                return false;
-            }
-        }
-        // decoder_sparse_step=1 means every layer is MoE
-        let step = self.decoder_sparse_step.unwrap_or(1);
-        if step == 0 {
-            return false;
-        }
-        layer_idx.is_multiple_of(step)
-    }
-
-    /// Qwen3-0.6B configuration.
-    pub fn qwen3_0_6b() -> Self {
-        Self {
-            hidden_size: 1024,
-            num_hidden_layers: 28,
-            num_attention_heads: 16,
-            num_key_value_heads: 8,
-            intermediate_size: 3072,
-            vocab_size: 151936,
-            max_position_embeddings: 40960,
-            rms_norm_eps: 1e-6,
-            rope_theta: 1_000_000.0,
-            head_dim: 128,
-            tie_word_embeddings: true,
-            num_experts: None,
-            num_experts_per_tok: None,
-            moe_intermediate_size: None,
-            decoder_sparse_step: None,
-            norm_topk_prob: None,
-            mlp_only_layers: None,
-            bos_token_id: 151643,
-            eos_token_id: 151645,
-        }
-    }
-
-    /// Qwen3-1.7B configuration.
-    pub fn qwen3_1_7b() -> Self {
-        Self {
-            hidden_size: 1536,
-            num_hidden_layers: 28,
-            num_attention_heads: 16,
-            num_key_value_heads: 8,
-            intermediate_size: 4608,
-            vocab_size: 151936,
-            max_position_embeddings: 40960,
-            rms_norm_eps: 1e-6,
-            rope_theta: 1_000_000.0,
-            head_dim: 128,
-            tie_word_embeddings: true,
-            num_experts: None,
-            num_experts_per_tok: None,
-            moe_intermediate_size: None,
-            decoder_sparse_step: None,
-            norm_topk_prob: None,
-            mlp_only_layers: None,
-            bos_token_id: 151643,
-            eos_token_id: 151645,
-        }
-    }
-
-    /// Qwen3-4B configuration.
-    pub fn qwen3_4b() -> Self {
-        Self {
-            hidden_size: 2560,
-            num_hidden_layers: 36,
-            num_attention_heads: 32,
-            num_key_value_heads: 8,
-            intermediate_size: 9728,
-            vocab_size: 151936,
-            max_position_embeddings: 40960,
-            rms_norm_eps: 1e-6,
-            rope_theta: 1_000_000.0,
-            head_dim: 128,
-            tie_word_embeddings: true,
-            num_experts: None,
-            num_experts_per_tok: None,
-            moe_intermediate_size: None,
-            decoder_sparse_step: None,
-            norm_topk_prob: None,
-            mlp_only_layers: None,
-            bos_token_id: 151643,
-            eos_token_id: 151645,
-        }
-    }
-
-    /// Qwen3-8B configuration.
-    pub fn qwen3_8b() -> Self {
-        Self {
-            hidden_size: 4096,
-            num_hidden_layers: 36,
-            num_attention_heads: 32,
-            num_key_value_heads: 8,
-            intermediate_size: 12288,
-            vocab_size: 151936,
-            max_position_embeddings: 40960,
-            rms_norm_eps: 1e-6,
-            rope_theta: 1_000_000.0,
-            head_dim: 128,
-            tie_word_embeddings: false,
-            num_experts: None,
-            num_experts_per_tok: None,
-            moe_intermediate_size: None,
-            decoder_sparse_step: None,
-            norm_topk_prob: None,
-            mlp_only_layers: None,
-            bos_token_id: 151643,
-            eos_token_id: 151645,
-        }
-    }
-
-    /// Qwen3-30B-A3B (MoE) configuration.
-    pub fn qwen3_30b_a3b() -> Self {
-        Self {
-            hidden_size: 2048,
-            num_hidden_layers: 48,
-            num_attention_heads: 32,
-            num_key_value_heads: 4,
-            intermediate_size: 768, // dense intermediate (not used for MoE layers)
-            vocab_size: 151936,
-            max_position_embeddings: 40960,
-            rms_norm_eps: 1e-6,
-            rope_theta: 1_000_000.0,
-            head_dim: 128,
-            tie_word_embeddings: true,
-            num_experts: Some(128),
-            num_experts_per_tok: Some(8),
-            moe_intermediate_size: Some(768),
-            decoder_sparse_step: Some(1),
-            norm_topk_prob: Some(true),
-            mlp_only_layers: Some(vec![]),
-            bos_token_id: 151643,
-            eos_token_id: 151645,
-        }
-    }
-
-    /// Qwen3-235B-A22B (MoE) configuration.
-    pub fn qwen3_235b_a22b() -> Self {
-        Self {
-            hidden_size: 4096,
-            num_hidden_layers: 94,
-            num_attention_heads: 64,
-            num_key_value_heads: 4,
-            intermediate_size: 1536, // dense intermediate (not used for MoE layers)
-            vocab_size: 152064,
-            max_position_embeddings: 40960,
-            rms_norm_eps: 1e-6,
-            rope_theta: 1_000_000.0,
-            head_dim: 128,
-            tie_word_embeddings: false,
-            num_experts: Some(128),
-            num_experts_per_tok: Some(8),
-            moe_intermediate_size: Some(1536),
-            decoder_sparse_step: Some(1),
-            norm_topk_prob: Some(true),
-            mlp_only_layers: Some(vec![]),
-            bos_token_id: 151643,
-            eos_token_id: 151645,
-        }
-    }
 }
 
 /// Generation output.
@@ -326,257 +89,27 @@ pub struct GenerationParams<'a> {
 ///
 /// Only batch size 1 is supported. KV caches and sampling are not designed for batched inference.
 pub struct Qwen3<B: Backend> {
-    transformer: Transformer<B>,
-    rope: RotaryEmbedding<B>,
-    caches: Vec<AttentionKvCache<B>>,
-    config: Qwen3Config,
-    eos_token_id: u32,
-    max_seq_len: usize,
-    device: Device<B>,
+    pub transformer: Transformer<B>,
+    pub rope: RotaryEmbedding<B>,
+    //pub caches: Vec<AttentionKvCache<B>>,
+    pub config: Qwen3Config,
+    pub eos_token_id: u32,
+    pub max_seq_len: usize,
+    pub device: Device<B>,
+}
+
+/// Reset the KV caches for a new generation.
+pub fn reset_caches<B: Backend>(caches: &mut Vec<AttentionKvCache<B>>) {
+    for cache in caches {
+        cache.reset();
+    }
 }
 
 impl<B: Backend> Qwen3<B> {
-    /// Load a Qwen3 model from a directory containing `config.json` and safetensors weight files.
-    pub fn from_pretrained(
-        model_dir: impl AsRef<Path>,
-        max_seq_len: usize,
-        quantization: QuantizationMode,
-        device: &Device<B>,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
-        let model_dir = model_dir.as_ref();
-
-        // Load config
-        let config = Qwen3Config::from_file(model_dir.join("config.json"))?;
-
-        // Build MoE config if this is a MoE model
-        let moe_config = if config.is_moe() {
-            Some(MoeConfig {
-                num_experts: config.num_experts.unwrap(),
-                num_experts_per_tok: config.num_experts_per_tok.unwrap(),
-                moe_intermediate_size: config.moe_intermediate_size.unwrap(),
-                norm_topk_prob: config.norm_topk_prob.unwrap_or(true),
-                mlp_only_layers: config.mlp_only_layers.clone().unwrap_or_default(),
-                decoder_sparse_step: config.decoder_sparse_step.unwrap_or(1),
-            })
-        } else {
-            None
-        };
-
-        // Create model
-        let transformer = Transformer::new(
-            config.vocab_size,
-            config.hidden_size,
-            config.num_hidden_layers,
-            config.num_attention_heads,
-            config.num_key_value_heads,
-            config.head_dim,
-            config.intermediate_size,
-            config.rms_norm_eps,
-            config.tie_word_embeddings,
-            moe_config.as_ref(),
-            device,
-        );
-
-        // Load weights from safetensors
-        let transformer = load_safetensors_weights(transformer, model_dir, &config, device)?;
-
-        // Quantize weights if requested (Auto means no quantization for SafeTensors)
-        let effective = match quantization {
-            QuantizationMode::Auto => QuantizationMode::None,
-            other => other,
-        };
-        let transformer = apply_quantization(transformer, effective);
-
-        let rope = RotaryEmbedding::new(config.head_dim, max_seq_len, config.rope_theta, device);
-
-        let caches = (0..config.num_hidden_layers)
-            .map(|_| {
-                AttentionKvCache::new(
-                    1,
-                    config.num_key_value_heads,
-                    max_seq_len,
-                    config.head_dim,
-                    device,
-                )
-            })
-            .collect();
-
-        let eos_token_id = config.eos_token_id;
-        Ok(Self {
-            transformer,
-            rope,
-            caches,
-            config,
-            eos_token_id,
-            max_seq_len,
-            device: device.clone(),
-        })
-    }
-
-    /// Load a Qwen3 model from a GGUF file.
-    ///
-    /// Only requires a single `.gguf` file; config is extracted from GGUF metadata.
-    /// Supported GGUF quantization types: F32, F16, BF16, Q8_0, Q4_0, Q2_K, Q3_K, Q4_K, Q5_K, Q6_K.
-    pub fn from_gguf(
-        gguf_path: impl AsRef<Path>,
-        max_seq_len: usize,
-        quantization: QuantizationMode,
-        device: &Device<B>,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
-        let (gguf_file, mut file) = gguf::GgufFile::open(gguf_path)?;
-
-        // Extract config from GGUF metadata
-        let config = gguf::extract_config(&gguf_file)?;
-        eprintln!(
-            "GGUF config: hidden={}, layers={}, heads={}, kv_heads={}, vocab={}{}",
-            config.hidden_size,
-            config.num_hidden_layers,
-            config.num_attention_heads,
-            config.num_key_value_heads,
-            config.vocab_size,
-            if config.is_moe() {
-                format!(", MoE experts={}", config.num_experts.unwrap_or(0))
-            } else {
-                String::new()
-            }
-        );
-
-        // Build MoE config if needed
-        let moe_config = if config.is_moe() {
-            Some(MoeConfig {
-                num_experts: config.num_experts.unwrap(),
-                num_experts_per_tok: config.num_experts_per_tok.unwrap(),
-                moe_intermediate_size: config.moe_intermediate_size.unwrap(),
-                norm_topk_prob: config.norm_topk_prob.unwrap_or(true),
-                mlp_only_layers: config.mlp_only_layers.clone().unwrap_or_default(),
-                decoder_sparse_step: config.decoder_sparse_step.unwrap_or(1),
-            })
-        } else {
-            None
-        };
-
-        // Create model skeleton
-        let transformer = Transformer::new(
-            config.vocab_size,
-            config.hidden_size,
-            config.num_hidden_layers,
-            config.num_attention_heads,
-            config.num_key_value_heads,
-            config.head_dim,
-            config.intermediate_size,
-            config.rms_norm_eps,
-            config.tie_word_embeddings,
-            moe_config.as_ref(),
-            device,
-        );
-
-        // Resolve quantization mode: auto-detect from GGUF when Auto
-        let detected = detect_gguf_quantization(&gguf_file);
-        let resolved_quant = match quantization {
-            QuantizationMode::Auto => detected,
-            other => other,
-        };
-
-        // Build QuantScheme for per-tensor quantized loading
-        let quant_scheme = {
-            use burn::tensor::quantization::{QuantLevel, QuantScheme, QuantValue};
-            match resolved_quant {
-                QuantizationMode::Auto | QuantizationMode::None => None,
-                QuantizationMode::Int8 => {
-                    eprintln!("Loading GGUF with per-tensor INT8 quantization...");
-                    Some(
-                        QuantScheme::default()
-                            .with_value(QuantValue::Q8S)
-                            .with_level(QuantLevel::block([32])),
-                    )
-                }
-                QuantizationMode::Int4 => {
-                    eprintln!("Loading GGUF with per-tensor INT4 quantization...");
-                    Some(
-                        QuantScheme::default()
-                            .with_value(QuantValue::Q4S)
-                            .with_level(QuantLevel::block([32])),
-                    )
-                }
-            }
-        };
-
-        // Load weights from GGUF (per-tensor quantization applied during loading if scheme is set)
-        let per_tensor_quantized = quant_scheme.is_some();
-        let transformer = load_gguf_weights(
-            transformer,
-            &gguf_file,
-            &mut file,
-            &config,
-            quant_scheme,
-            device,
-        )?;
-
-        // Only apply whole-model quantization if per-tensor wasn't already done
-        let transformer = if per_tensor_quantized {
-            transformer
-        } else {
-            apply_quantization(transformer, resolved_quant)
-        };
-
-        let rope = RotaryEmbedding::new(config.head_dim, max_seq_len, config.rope_theta, device);
-
-        /*
-        let caches = (0..config.num_hidden_layers)
-            .map(|_| {
-                AttentionKvCache::new(
-                    1,
-                    config.num_key_value_heads,
-                    max_seq_len,
-                    config.head_dim,
-                    device,
-                )
-            })
-            .collect();
-
-        */
-        let caches = Self::initialize_cache(
-            config.num_hidden_layers,
-            config.num_key_value_heads,
-            max_seq_len,
-            config.head_dim,
-            device,
-        );
-
-        let eos_token_id = config.eos_token_id;
-        Ok(Self {
-            transformer,
-            rope,
-            caches,
-            config,
-            eos_token_id,
-            max_seq_len,
-            device: device.clone(),
-        })
-    }
-
-    /// Reset the KV caches for a new generation.
-    pub fn reset_caches(&mut self) {
-        for cache in &mut self.caches {
-            cache.reset();
-        }
-    }
-    //<B: Backend>
-    pub fn initialize_cache(
-        num_hidden_layers: usize,
-        num_key_value_heads: usize,
-        max_seq_len: usize,
-        head_dim: usize,
-        device: &Device<B>,
-    ) -> Vec<AttentionKvCache<B>> {
-        (0..num_hidden_layers)
-            .map(|_| AttentionKvCache::new(1, num_key_value_heads, max_seq_len, head_dim, device))
-            .collect()
-    }
-
     /// Generate text from a prompt.
     pub fn generate(
         &mut self,
+        mut caches: Vec<AttentionKvCache<B>>,
         tokenizer: &tokenizers::Tokenizer,
         prompt: &str,
         max_new_tokens: usize,
@@ -592,6 +125,7 @@ impl<B: Backend> Qwen3<B> {
                 sampler,
                 prefill_chunk_size: None,
             },
+            caches,
             |_| ControlFlow::Continue(()),
         )
     }
@@ -606,9 +140,10 @@ impl<B: Backend> Qwen3<B> {
         &mut self,
         tokenizer: &tokenizers::Tokenizer,
         params: GenerationParams,
+        mut caches: Vec<AttentionKvCache<B>>,
         mut callback: impl FnMut(GenerationEvent) -> ControlFlow<()>,
     ) -> Result<GenerationOutput, String> {
-        self.reset_caches();
+        reset_caches(&mut caches);
 
         let tokens = tokenizer
             .encode(params.prompt, false)
@@ -645,13 +180,9 @@ impl<B: Backend> Qwen3<B> {
 
             let total_seq_len = pos + chunk_len;
             let mask = build_causal_mask::<B>(chunk_len, total_seq_len, &self.device);
-            let logits = self.transformer.forward(
-                token_tensor,
-                &self.rope,
-                Some(mask),
-                &mut self.caches,
-                pos,
-            );
+            let logits =
+                self.transformer
+                    .forward(token_tensor, &self.rope, Some(mask), &mut caches, pos);
 
             // Keep logits from last chunk's final position for sampling
             let chunk_last_logits = logits
@@ -757,7 +288,7 @@ impl<B: Backend> Qwen3<B> {
 
                 let logits =
                     self.transformer
-                        .forward(token_tensor, &self.rope, None, &mut self.caches, pos);
+                        .forward(token_tensor, &self.rope, None, &mut caches, pos);
 
                 let logits = logits.reshape([1, self.config.vocab_size]);
                 next_token = sample_token(&logits, params.temperature, params.sampler);
@@ -1115,7 +646,7 @@ fn load_layer_weights<B: Backend>(
 /// Streams weights shard-by-shard: after reading each shard file, completed layers are
 /// loaded into the model immediately and their f32 data is freed. This keeps peak memory
 /// close to the final model size rather than 2-3x that.
-fn load_safetensors_weights<B: Backend>(
+pub(crate) fn load_safetensors_weights<B: Backend>(
     mut transformer: Transformer<B>,
     model_dir: &Path,
     config: &Qwen3Config,

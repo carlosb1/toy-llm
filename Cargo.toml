@@ -69,7 +69,7 @@ rustc-hash = { version = "1.1.0" }
 
 
 # SentencePiece tokenizer (tiny llama / llama 2)
-tokenizers = { version = "0.19.1", default-features = false, features = [
+tokenizers = { version = "0.22.2", default-features = false, features = [
     "onig",
 ] }
 #], optional = true }
@@ -81,7 +81,6 @@ rand = { version = "0.8.5", features = ["std_rng"] }
 tokio = { version = "1.51.*", features = ["full"] }
 anyhow = "1.0.102"
 axum = "0.8.9"
-tokenizer = "0.1.2" # std_rng is for no_std
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 uuid = { version = "1.21.0", features = ["v4", "serde"] }
@@ -98,6 +97,13 @@ burn-mlx = { git = "https://github.com/eidolons-ai/burn-mlx.git", branch = "main
 #image = { version = "0.25", optional = true, default-features = false, features = ["png", "jpeg"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 criterion = "0.8.2"
+hf-chat-template = "0.2.1"
+async-openai = { version = "0.41.1", features = ["chat-completion-types", "completion-types", "model-types"] }
+strum = "0.28.0"
+strum_macros = "0.28.0"
+reqwest = { version = "0.13.4", features = ["json"] }
+
+
 
 [dev-dependencies]
 # burn = { path = "../../burn/crates/burn", default-features = false, features = ["std"] }

@@ -3,7 +3,8 @@ use std::ops::ControlFlow;
 use std::time::Instant;
 
 use clap::Parser;
-use toy_llm::models::qwen::model::{GenerationEvent, GenerationParams, QuantizationMode, Qwen3};
+use toy_llm::models::qwen::loader::initialize_cache;
+use toy_llm::models::qwen::model::{GenerationEvent, GenerationParams, QuantizationMode};
 use toy_llm::models::qwen::sampling::Sampler;
 use toy_llm::models::qwen::tokenizer::Qwen3Tokenizer;
 
@@ -97,11 +98,21 @@ fn run<B: burn::prelude::Backend>(args: Args, device: burn::prelude::Device<B>) 
     eprintln!("Loading model from {}...", args.model_path);
     let load_start = Instant::now();
     let mut model = if use_gguf {
-        Qwen3::<B>::from_gguf(&args.model_path, args.max_seq_len, quantization, &device)
-            .expect("Failed to load GGUF model")
+        toy_llm::models::qwen::loader::from_gguf::<B>(
+            &args.model_path,
+            args.max_seq_len,
+            quantization,
+            &device,
+        )
+        .expect("Failed to load GGUF model")
     } else {
-        Qwen3::<B>::from_pretrained(&args.model_path, args.max_seq_len, quantization, &device)
-            .expect("Failed to load model")
+        toy_llm::models::qwen::loader::from_pretrained::<B>(
+            &args.model_path,
+            args.max_seq_len,
+            quantization,
+            &device,
+        )
+        .expect("Failed to load model")
     };
     eprintln!("Model loaded in {:.1}s", load_start.elapsed().as_secs_f64());
 
@@ -117,6 +128,14 @@ fn run<B: burn::prelude::Backend>(args: Args, device: burn::prelude::Device<B>) 
         Sampler::Argmax
     };
 
+    let caches = initialize_cache(
+        model.config.num_hidden_layers,
+        model.config.num_key_value_heads,
+        model.max_seq_len,
+        model.config.head_dim,
+        &device.clone(),
+    );
+
     // Generate with streaming output
     let mut prev_text_len = 0;
     let chunk_size = args.chunk_size;
@@ -129,6 +148,7 @@ fn run<B: burn::prelude::Backend>(args: Args, device: burn::prelude::Device<B>) 
             sampler: &mut sampler,
             prefill_chunk_size: chunk_size,
         },
+        caches,
         |event| {
             match event {
                 GenerationEvent::PrefillProgress {
