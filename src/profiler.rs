@@ -1,7 +1,8 @@
+use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct GenerationMetrics {
     pub prompt_tokens: usize,
     pub generated_tokens: usize,
@@ -68,9 +69,35 @@ impl MetricsRegistry {
             generated_tokens: self.generated_tokens.load(Ordering::Relaxed),
         }
     }
+
+    #[deprecated]
+    pub fn record_request(
+        &self,
+        successful: bool,
+        input_tokens: u64,
+        output_tokens: u64,
+        latency_ms: u64,
+    ) {
+        self.total_requests.fetch_add(1, Ordering::Relaxed);
+
+        if successful {
+            self.successful_requests.fetch_add(1, Ordering::Relaxed);
+        } else {
+            self.failed_requests.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    pub fn reset(&self) {
+        self.total_requests.store(0, Ordering::Relaxed);
+        self.successful_requests.store(0, Ordering::Relaxed);
+        self.failed_requests.store(0, Ordering::Relaxed);
+        self.active_requests.store(0, Ordering::Relaxed);
+        self.prompt_tokens.store(0, Ordering::Relaxed);
+        self.generated_tokens.store(0, Ordering::Relaxed);
+    }
 }
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct MetricsSnapshot {
     pub total_requests: u64,
     pub successful_requests: u64,
@@ -80,29 +107,66 @@ pub struct MetricsSnapshot {
     pub generated_tokens: u64,
 }
 
+use std::fmt;
+
+impl fmt::Display for MetricsSnapshot {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let success_rate = if self.total_requests > 0 {
+            self.successful_requests as f64 / self.total_requests as f64 * 100.0
+        } else {
+            0.0
+        };
+
+        let failure_rate = if self.total_requests > 0 {
+            self.failed_requests as f64 / self.total_requests as f64 * 100.0
+        } else {
+            0.0
+        };
+
+        let total_tokens = self.prompt_tokens + self.generated_tokens;
+
+        writeln!(f, "Metrics report")?;
+        writeln!(f, "==============")?;
+        writeln!(f, "Requests")?;
+        writeln!(f, "  Total:      {}", self.total_requests)?;
+        writeln!(
+            f,
+            "  Successful: {} ({success_rate:.2}%)",
+            self.successful_requests
+        )?;
+        writeln!(
+            f,
+            "  Failed:     {} ({failure_rate:.2}%)",
+            self.failed_requests
+        )?;
+        writeln!(f, "  Active:     {}", self.active_requests)?;
+        writeln!(f)?;
+        writeln!(f, "Tokens")?;
+        writeln!(f, "  Prompt:     {}", self.prompt_tokens)?;
+        writeln!(f, "  Generated:  {}", self.generated_tokens)?;
+        writeln!(f, "  Total:      {total_tokens}")?;
+
+        Ok(())
+    }
+}
+
 #[derive(Debug)]
 pub struct GenerationProfiler {
-    // Petición completa
     request_started_at: Instant,
     request_finished_at: Option<Instant>,
 
-    // Preparación y cola
     queued_at: Option<Instant>,
     worker_started_at: Option<Instant>,
 
-    // Prefill y primer token
     prefill_started_at: Option<Instant>,
     prefill_finished_at: Option<Instant>,
     first_token_at: Option<Instant>,
 
-    // Decode
     decode_started_at: Option<Instant>,
     decode_finished_at: Option<Instant>,
 
-    // Worker
     worker_finished_at: Option<Instant>,
 
-    // Contadores
     input_tokens: usize,
     output_tokens: usize,
 }

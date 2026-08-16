@@ -30,7 +30,7 @@ pub async fn burn_worker<B: Backend>(
                 tokens,
                 stop_tokens,
                 input_pos,
-                sample_len: gen_config.sample_len,
+                max_new_tokens: gen_config.max_new_tokens,
                 num_generated_tokens: 0,
                 is_finished: false,
             };

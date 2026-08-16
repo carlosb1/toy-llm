@@ -78,7 +78,7 @@ pub struct RequestState<B: Backend> {
     pub tokens: Tensor<B, 1, Int>,
     pub stop_tokens: Tensor<B, 1, Int>,
     pub input_pos: Tensor<B, 1, Int>,
-    pub sample_len: usize,
+    pub max_new_tokens: usize,
     // status
     pub num_generated_tokens: usize,
     pub is_finished: bool,
@@ -115,7 +115,7 @@ impl<B: Backend, T: Tokenizer> Llama<B, T> {
             stop_tokens,
             num_generated_tokens: 0,
             input_pos,
-            sample_len,
+            max_new_tokens: sample_len,
             is_finished: false,
         }
     }
@@ -347,7 +347,11 @@ impl<B: Backend, T: Tokenizer> Llama<B, T> {
             "Prefilled in {}s starting decoding",
             now.elapsed().as_secs()
         );
-        while !state.is_finished && state.num_generated_tokens < state.sample_len {
+        tracing::info!(
+            "Starting decoding generation with sample length={}",
+            state.max_new_tokens,
+        );
+        while !state.is_finished && state.num_generated_tokens < state.max_new_tokens {
             println!(
                 "Generated {} tokens so far...\r",
                 state.num_generated_tokens

@@ -2,6 +2,10 @@ use crate::api::http::{AppError, AppState};
 use crate::tokenizer::Tokenizer;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::api::openai::conversors::{
+    asst_content_to_string, dev_content_to_string, sys_content_to_string, to_hf_msg,
+    tool_content_to_string, user_content_to_string,
+};
 use crate::api::utils::create_token_tensors;
 use crate::engine::GenerationConfig;
 use crate::models::llama::model::InferenceRequest;
@@ -78,112 +82,6 @@ where
     Ok(Json(to_model(model)))
 }
 
-#[derive(Debug, Clone)]
-struct HfMsg {
-    role: String,
-    content: String,
-}
-fn to_hf_msg(m: &ChatCompletionRequestMessage) -> HfMsg {
-    match m {
-        ChatCompletionRequestMessage::Developer(x) => HfMsg {
-            role: "system".into(), // HF normalmente no usa "developer"
-            content: dev_content_to_string(&x.content),
-        },
-        ChatCompletionRequestMessage::System(x) => HfMsg {
-            role: "system".into(),
-            content: sys_content_to_string(&x.content),
-        },
-        ChatCompletionRequestMessage::User(x) => HfMsg {
-            role: "user".into(),
-            content: user_content_to_string(&x.content),
-        },
-        ChatCompletionRequestMessage::Assistant(x) => HfMsg {
-            role: "assistant".into(),
-            content: x
-                .content
-                .as_ref()
-                .map(asst_content_to_string)
-                .unwrap_or_default(),
-        },
-        ChatCompletionRequestMessage::Tool(x) => HfMsg {
-            role: "tool".into(), // o "assistant" si tu template no soporta "tool"
-            content: tool_content_to_string(&x.content),
-        },
-        ChatCompletionRequestMessage::Function(x) => HfMsg {
-            role: "tool".into(), // legacy -> tool
-            content: x.content.clone().unwrap_or_default(),
-        },
-    }
-}
-
-fn dev_content_to_string(c: &ChatCompletionRequestDeveloperMessageContent) -> String {
-    match c {
-        ChatCompletionRequestDeveloperMessageContent::Text(t) => t.clone(),
-        ChatCompletionRequestDeveloperMessageContent::Array(parts) => parts
-            .iter()
-            .map(|p| match p {
-                ChatCompletionRequestDeveloperMessageContentPart::Text(t) => t.text.clone(),
-            })
-            .collect::<Vec<_>>()
-            .join("\n"),
-    }
-}
-
-fn sys_content_to_string(c: &ChatCompletionRequestSystemMessageContent) -> String {
-    match c {
-        ChatCompletionRequestSystemMessageContent::Text(t) => t.clone(),
-        ChatCompletionRequestSystemMessageContent::Array(parts) => parts
-            .iter()
-            .map(|p| match p {
-                ChatCompletionRequestSystemMessageContentPart::Text(t) => t.text.clone(),
-            })
-            .collect::<Vec<_>>()
-            .join("\n"),
-    }
-}
-
-fn user_content_to_string(c: &ChatCompletionRequestUserMessageContent) -> String {
-    match c {
-        ChatCompletionRequestUserMessageContent::Text(t) => t.clone(),
-        ChatCompletionRequestUserMessageContent::Array(parts) => parts
-            .iter()
-            .map(|p| match p {
-                ChatCompletionRequestUserMessageContentPart::Text(t) => t.text.clone(),
-                _ => "".to_string(), // imagen/audio/file: ignora o usa marcador
-            })
-            .filter(|s| !s.is_empty())
-            .collect::<Vec<_>>()
-            .join("\n"),
-    }
-}
-
-fn asst_content_to_string(c: &ChatCompletionRequestAssistantMessageContent) -> String {
-    match c {
-        ChatCompletionRequestAssistantMessageContent::Text(t) => t.clone(),
-        ChatCompletionRequestAssistantMessageContent::Array(parts) => parts
-            .iter()
-            .map(|p| match p {
-                ChatCompletionRequestAssistantMessageContentPart::Text(t) => t.text.clone(),
-                ChatCompletionRequestAssistantMessageContentPart::Refusal(r) => r.refusal.clone(),
-            })
-            .collect::<Vec<_>>()
-            .join("\n"),
-    }
-}
-
-fn tool_content_to_string(c: &ChatCompletionRequestToolMessageContent) -> String {
-    match c {
-        ChatCompletionRequestToolMessageContent::Text(t) => t.clone(),
-        ChatCompletionRequestToolMessageContent::Array(parts) => parts
-            .iter()
-            .map(|p| match p {
-                ChatCompletionRequestToolMessageContentPart::Text(t) => t.text.clone(),
-            })
-            .collect::<Vec<_>>()
-            .join("\n"),
-    }
-}
-
 pub async fn create_chat_completion<B, T>(
     State(state): State<AppState<B, T>>,
     Json(request): Json<CreateChatCompletionRequest>,
@@ -199,8 +97,8 @@ where
 
     let max_new_tokens = request
         .max_completion_tokens
-        .map(|value| value as usize)
-        .unwrap_or(256);
+        .or(request.max_tokens)
+        .unwrap_or(12) as usize;
 
     let mut messages = Vec::new();
     for msg in request.messages {
@@ -216,14 +114,13 @@ where
     let generation_config = GenerationConfig {
         sampler: Sampler::Argmax,
         temperature: request.temperature.unwrap_or(1.0) as f64,
-        sample_len: request.max_completion_tokens.unwrap_or(256) as usize,
+        max_new_tokens,
         top_p: request.top_p.map(|value| value as f64),
         top_k: None,
         repetition_penalty: None,
     };
     /* generation profiler */
     let mut profiler = GenerationProfiler::new();
-
     /* setting up memory */
     let start_time = Instant::now();
     let token_tensors = create_token_tensors(&state, prompt, max_new_tokens);
@@ -275,6 +172,13 @@ where
             decode_tps = metrics.decode_tokens_per_second,
             "completion generation completed"
         );
+
+        tracing::info!(
+            "Metrics: {:?}",
+            serde_json::to_string(&metrics)
+                .unwrap_or_else(|_| "Failed to serialize metrics".to_string())
+        );
+
         state.metrics.record_success(&metrics);
     }
 
@@ -341,12 +245,13 @@ where
 
     let model_name = request.model.clone();
 
-    let max_new_tokens = request.max_tokens.unwrap_or(256) as usize;
+    //righ not max tokens small. like 12 for better testing we can add more
+    let max_new_tokens = request.max_tokens.unwrap_or(12) as usize;
 
     let generation_config = GenerationConfig {
         sampler: Sampler::Argmax,
         temperature: request.temperature.unwrap_or(1.0) as f64,
-        sample_len: max_new_tokens,
+        max_new_tokens,
         top_p: request.top_p.map(f64::from),
         top_k: None,
         repetition_penalty: None,
@@ -415,6 +320,13 @@ where
             decode_tps = metrics.decode_tokens_per_second,
             "completion generation completed"
         );
+
+        tracing::info!(
+            "Metrics: {:?}",
+            serde_json::to_string(&metrics)
+                .unwrap_or_else(|_| "Failed to serialize metrics".to_string())
+        );
+
         state.metrics.record_success(&metrics);
     }
     let created = SystemTime::now()

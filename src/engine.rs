@@ -10,7 +10,7 @@ use burn::prelude::Backend;
 pub struct GenerationConfig {
     pub sampler: Sampler,
     pub temperature: f64,
-    pub sample_len: usize,
+    pub max_new_tokens: usize,
     pub top_p: Option<f64>,
     pub top_k: Option<usize>,
     pub repetition_penalty: Option<f64>,
@@ -21,7 +21,7 @@ impl Default for GenerationConfig {
         Self {
             sampler: Sampler::Argmax,
             temperature: 0.6,
-            sample_len: 65,
+            max_new_tokens: 65,
             top_p: None,
             top_k: None,
             repetition_penalty: None,
@@ -54,7 +54,7 @@ impl<B: Backend> BurnEngineLlama<B> {
     pub fn load_with_device_tiktoken(device: &B::Device) -> anyhow::Result<Self> {
         let temperature = 0.6;
         let max_seq_len = 128;
-        let sample_len = 65;
+        let max_new_tokens = 65;
         let sampler = Sampler::Argmax;
         // TODO, It hardcod which model to choose
         let (llama, cache_config) = ModelKind::Llama3_2_3B
@@ -64,7 +64,7 @@ impl<B: Backend> BurnEngineLlama<B> {
         let generation_config = GenerationConfig {
             sampler,
             temperature,
-            sample_len,
+            max_new_tokens,
             top_p: None,
             top_k: None,
             repetition_penalty: None,

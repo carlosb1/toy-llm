@@ -6,6 +6,7 @@ use crate::models::registry_service::RegistryService;
 use crate::models::resolver_service::ModelResolverService;
 use crate::profiler::{GenerationProfiler, MetricsRegistry};
 pub use crate::prompt::PromptProcessor;
+use crate::tokenizer::custom_tokenizer::TokenizerHandle;
 use crate::tokenizer::Tokenizer;
 use axum::extract::State;
 use axum::http::StatusCode;
@@ -81,23 +82,6 @@ impl GenerateState {
 }
 
 #[derive(Clone)]
-pub struct TokenizerHandle<B: Backend, T: Tokenizer> {
-    /// The tokenizer.
-    pub tokenizer: T,
-    pub device: Device<B>,
-}
-
-impl<B: Backend, T: Tokenizer> TokenizerHandle<B, T> {
-    pub fn tokenize(&self, text: &str) -> Tensor<B, 1, Int> {
-        let bos = !cfg!(feature = "tiny"); // TinyLlama Chat doesn't prepend BOS token with the chat format
-        let tokens = self.tokenizer.encode(text, bos, false);
-
-        let shape = Shape::new([tokens.len()]);
-        Tensor::<B, 1, Int>::from_data(TensorData::new(tokens, shape), &self.device)
-    }
-}
-
-#[derive(Clone)]
 pub struct AppState<B: Backend, T: Tokenizer> {
     pub tx: mpsc::Sender<InferenceRequest<B>>,
     pub tokenizer_handler: Arc<TokenizerHandle<B, T>>,
@@ -124,7 +108,7 @@ where
     let generation_config = GenerationConfig {
         sampler: Sampler::Argmax,
         temperature: req.temperature,
-        sample_len: req.sample_len,
+        max_new_tokens: req.sample_len,
         top_p: None,
         top_k: None,
         repetition_penalty: None,
@@ -176,6 +160,12 @@ where
                 .map(|duration| duration.as_secs_f64() * 1_000.0),
             decode_tps = metrics.decode_tokens_per_second,
             "completion generation completed"
+        );
+
+        tracing::info!(
+            "Metrics: {:?}",
+            serde_json::to_string(&metrics)
+                .unwrap_or_else(|_| "Failed to serialize metrics".to_string())
         );
         state.metrics.record_success(&metrics);
     }

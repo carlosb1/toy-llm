@@ -11,7 +11,8 @@ async fn chat_completion_e2e() {
     .expect("Failed to set global default subscriber");
 
     tracing::info!("starting main loop");
-    let app = build_app().await;
+    let model = "any_model".to_string();
+    let app = build_app(model).await;
     tracing::info!("Setting up {:?}", app);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();

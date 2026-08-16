@@ -6,7 +6,9 @@ pub mod tiktoken;
 #[cfg(feature = "llama3")]
 pub use tiktoken::*;
 
+pub mod custom_tokenizer;
 #[cfg(feature = "tiny")]
 pub mod sentence_piece;
+
 #[cfg(feature = "tiny")]
 pub use sentence_piece::*;

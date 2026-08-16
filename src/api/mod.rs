@@ -1,3 +1,5 @@
+pub mod cli;
 pub mod http;
-pub(crate) mod openai;
+pub mod metrics;
+pub mod openai;
 mod utils;

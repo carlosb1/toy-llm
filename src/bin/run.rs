@@ -20,7 +20,7 @@ async fn main() {
         selected::device()
     );
 
-    let app = build_app().await;
+    let app = build_app("model_name".to_string()).await;
     let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
         .await
         .unwrap();
