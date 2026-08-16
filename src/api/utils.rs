@@ -1,4 +1,4 @@
-use crate::api::http::{AppState, GenerateHttpRequest};
+use crate::api::http::generate::{AppState, GenerateHttpRequest};
 use crate::models::llama::model::TokenTensor;
 use crate::tokenizer::Tokenizer;
 use burn::prelude::{Backend, Int};

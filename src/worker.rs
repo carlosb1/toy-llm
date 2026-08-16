@@ -1,15 +1,17 @@
-use crate::engine::BurnEngineLlama;
 use crate::models::llama::cacheconfig::CacheConfig;
+use crate::models::llama::engine::BurnEngineLlama;
 use crate::models::llama::model::{InferenceRequest, RequestState};
 use crate::profile;
 use anyhow::anyhow;
 use burn::prelude::Backend;
+use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{mpsc, Mutex, RwLock};
 
 pub async fn burn_worker<B: Backend>(
     mut rx: mpsc::Receiver<InferenceRequest<B>>,
     engine: Arc<Mutex<BurnEngineLlama<B>>>,
+    model_registries: Arc<RwLock<HashMap<String, Arc<Mutex<BurnEngineLlama<B>>>>>>,
     cache_config: CacheConfig,
 ) {
     while let Some(mut req) = rx.recv().await {
@@ -22,6 +24,15 @@ pub async fn burn_worker<B: Backend>(
         let input_pos = req.input_pos;
 
         let result = {
+            let engine = model_registries
+                .read()
+                .await
+                .get(&req.model_name)
+                .map(|engine| engine.clone())
+                .unwrap_or_else(|| {
+                    tracing::info!("model {} not found, using default engine", req.model_name);
+                    engine.clone()
+                });
             let guard = &mut *engine.lock().await;
             let default_gen_config = guard.default_generation_config.clone();
             let mut gen_config = req.generation_config.unwrap_or(default_gen_config);

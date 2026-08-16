@@ -16,7 +16,7 @@ use crate::models::llama::transformer::{KeyValueCache, Transformer};
 //#[cfg(feature = "pretrained")]
 //use crate::models::pretrained::ModelMeta;
 
-use crate::engine::GenerationConfig;
+use crate::models::config::GenerationConfig;
 use crate::profile;
 use crate::profiler::GenerationProfiler;
 use crate::tokenizer::Tokenizer;
@@ -44,6 +44,7 @@ pub struct TokenTensor<B: Backend> {
 }
 
 pub struct InferenceRequest<B: Backend> {
+    pub model_name: String,
     pub prompt_len: usize,
     pub tokens: Tensor<B, 1, Int>,
     pub stop_tokens: Tensor<B, 1, Int>,
@@ -55,12 +56,14 @@ pub struct InferenceRequest<B: Backend> {
 
 impl<B: Backend> InferenceRequest<B> {
     pub fn from_tensors(
+        model_name: &str,
         tensors: TokenTensor<B>,
         generation_config: Option<GenerationConfig>,
         response_tx: oneshot::Sender<anyhow::Result<GenerationOutput>>,
         profiler: Option<GenerationProfiler>,
     ) -> Self {
         Self {
+            model_name: model_name.to_string(),
             prompt_len: tensors.prompt_len,
             tokens: tensors.tokens,
             stop_tokens: tensors.stop_tokens,

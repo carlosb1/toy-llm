@@ -9,7 +9,7 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 
 use toy_llm::api::cli::{BenchCommand, BenchServeArgs, Cli, Command, MetricsArgs, ServeArgs};
-use toy_llm::api::metrics::{MetricsResultHttpResponse, ResetMetricsHttpResponse};
+use toy_llm::api::http::metrics::{MetricsResultHttpResponse, ResetMetricsHttpResponse};
 use toy_llm::app::build_app;
 use toy_llm::backend::selected;
 use toy_llm::bench::config::{BenchmarkConfig, BenchmarkRequest, LoadMode};
@@ -34,7 +34,20 @@ async fn main() -> anyhow::Result<()> {
             BenchCommand::Serve(args) => run_benchmark(args).await,
         },
         Command::Metrics(args) => run_metrics(args).await,
+        Command::Config(args) => run_config(args).await,
     }
+}
+
+async fn run_config(args: toy_llm::api::cli::ConfigArgs) -> anyhow::Result<()> {
+    if args.models {
+        let models = toy_llm::models::registry_service::RegistryService::new().list_models();
+        println!("Available models:");
+        for model in models {
+            println!("- {}", model);
+        }
+    }
+
+    Ok(())
 }
 
 async fn run_metrics(args: MetricsArgs) -> anyhow::Result<()> {

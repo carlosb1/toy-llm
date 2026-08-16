@@ -33,4 +33,8 @@ impl RegistryService {
                 .collect(),
         }
     }
+
+    pub fn list_models(&self) -> Vec<String> {
+        self.models.keys().cloned().collect::<Vec<String>>()
+    }
 }

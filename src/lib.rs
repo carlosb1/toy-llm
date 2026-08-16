@@ -4,7 +4,6 @@ pub mod api;
 pub mod app;
 pub mod backend;
 pub mod bench;
-pub mod engine;
 pub mod models;
 pub mod profiler;
 pub mod prompt;

@@ -1,9 +1,9 @@
 use crate::api::utils::create_token_tensors;
-use crate::engine::GenerationConfig;
+use crate::models::config::GenerationConfig;
 use crate::models::llama::model::{InferenceRequest, TokenTensor};
 use crate::models::llama::sampling::Sampler;
 use crate::models::registry_service::RegistryService;
-use crate::models::resolver_service::ModelResolverService;
+use crate::models::resolver_service::{ModelResolverService, DEFAULT_MODEL};
 use crate::profiler::{GenerationProfiler, MetricsRegistry};
 pub use crate::prompt::PromptProcessor;
 use crate::tokenizer::custom_tokenizer::TokenizerHandle;
@@ -86,7 +86,6 @@ pub struct AppState<B: Backend, T: Tokenizer> {
     pub tx: mpsc::Sender<InferenceRequest<B>>,
     pub tokenizer_handler: Arc<TokenizerHandle<B, T>>,
     pub registry: RegistryService,
-    pub resolver: ModelResolverService,
     pub prompter: Arc<PromptProcessor>,
     pub metrics: Arc<MetricsRegistry>,
 }
@@ -123,7 +122,12 @@ where
     let elapsed_time = start_time.elapsed();
     println!("Time elapsed: {:?}", elapsed_time);
     let (response_tx, response_rx) = oneshot::channel();
+
+    tracing::debug!("Right now we are only supporting our default model");
+    let model_name = DEFAULT_MODEL;
+
     let inference_req = InferenceRequest::from_tensors(
+        model_name,
         token_tensors,
         Some(generation_config),
         response_tx,

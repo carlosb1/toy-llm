@@ -2,11 +2,9 @@ use axum::{extract::State, routing::get, Json, Router};
 use burn::prelude::Backend;
 use serde::{Deserialize, Serialize};
 
+use crate::api::http::generate::{AppError, AppState};
 use crate::profiler::MetricsSnapshot;
-use crate::{
-    api::http::{AppError, AppState},
-    tokenizer::Tokenizer,
-};
+use crate::tokenizer::Tokenizer;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MetricsResultHttpResponse {

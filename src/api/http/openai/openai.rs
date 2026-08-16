@@ -1,16 +1,17 @@
-use crate::api::http::{AppError, AppState};
+use crate::api::http::generate::{AppError, AppState};
 use crate::tokenizer::Tokenizer;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::api::openai::conversors::{
+use crate::api::http::openai::conversors::{
     asst_content_to_string, dev_content_to_string, sys_content_to_string, to_hf_msg,
     tool_content_to_string, user_content_to_string,
 };
 use crate::api::utils::create_token_tensors;
-use crate::engine::GenerationConfig;
+use crate::models::config::GenerationConfig;
 use crate::models::llama::model::InferenceRequest;
 use crate::models::llama::sampling::Sampler;
 use crate::models::registry_service::ModelInfo;
+use crate::models::resolver_service::DEFAULT_MODEL;
 use crate::profiler::GenerationProfiler;
 use async_openai::types::chat::{
     ChatChoice, ChatCompletionRequestAssistantMessageContent,
@@ -37,50 +38,6 @@ use hf_chat_template::Message;
 use tokio::sync::oneshot;
 use tokio::time::Instant;
 use uuid::Uuid;
-
-pub fn to_model(model_info: &ModelInfo) -> Model {
-    Model {
-        id: model_info.name.clone(),
-        object: "model".to_string(),
-        created: 0,
-        owned_by: "user".to_string(),
-    }
-}
-
-pub async fn list_models<B, T>(State(state): State<AppState<B, T>>) -> Json<ListModelResponse>
-where
-    B: Backend,
-    T: Tokenizer,
-{
-    let data: Vec<Model> = state
-        .registry
-        .models
-        .iter()
-        .map(|(_, model_info)| to_model(model_info))
-        .collect();
-
-    let response = ListModelResponse {
-        object: "list".to_string(),
-        data,
-    };
-    Json(response)
-}
-
-pub async fn retrieve_model<B, T>(
-    State(state): State<AppState<B, T>>,
-    Path(search_model): Path<String>,
-) -> Result<Json<Model>, StatusCode>
-where
-    B: Backend,
-    T: Tokenizer,
-{
-    let model = state
-        .registry
-        .models
-        .get(&search_model)
-        .ok_or(StatusCode::NOT_FOUND)?;
-    Ok(Json(to_model(model)))
-}
 
 pub async fn create_chat_completion<B, T>(
     State(state): State<AppState<B, T>>,
@@ -128,8 +85,17 @@ where
     let elapsed_time = start_time.elapsed();
     println!("Time elapsed: {:?}", elapsed_time);
 
+    if request.model != DEFAULT_MODEL {
+        tracing::info!(
+            "Right now we are only supporting one model={:?}",
+            DEFAULT_MODEL
+        )
+    }
+    let model_name = DEFAULT_MODEL;
+
     let (response_tx, response_rx) = oneshot::channel();
     let inference_req = InferenceRequest::from_tensors(
+        model_name,
         token_tensors,
         Some(generation_config),
         response_tx,
@@ -211,7 +177,7 @@ where
         id: id.to_string(),
         object: "chat.completion".to_string(),
         created: created.as_secs() as u32,
-        model: model_name,
+        model: model_name.to_string(),
         service_tier: None,
         choices,
         usage: None,
@@ -269,11 +235,20 @@ where
         }
     };
 
+    if request.model != DEFAULT_MODEL {
+        tracing::info!(
+            "Right now we are only supporting one model={:?}",
+            DEFAULT_MODEL
+        )
+    }
+    let model_name = DEFAULT_MODEL;
+
     let mut profiler = GenerationProfiler::new();
     let token_tensors = create_token_tensors(&state, prompt_tokens, max_new_tokens);
     profiler.set_input_tokens(token_tensors.prompt_len);
     let (response_tx, response_rx) = oneshot::channel();
     let inference_request = InferenceRequest::from_tensors(
+        model_name,
         token_tensors,
         Some(generation_config),
         response_tx,
@@ -350,7 +325,7 @@ where
 
         created,
 
-        model: model_name,
+        model: model_name.to_string(),
 
         choices: vec![Choice {
             text: output.text,
@@ -373,8 +348,6 @@ where
     AppState<B, T>: Clone + Send + Sync + 'static,
 {
     Router::new()
-        .route("/models", get(list_models::<B, T>))
-        .route("/models/{model}", get(retrieve_model::<B, T>))
         .route("/chat/completions", post(create_chat_completion::<B, T>))
         .route("/completions", post(create_completion::<B, T>))
 }

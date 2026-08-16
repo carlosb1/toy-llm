@@ -19,6 +19,14 @@ pub enum Command {
     Bench(BenchArgs),
 
     Metrics(MetricsArgs),
+
+    Config(ConfigArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct ConfigArgs {
+    #[arg(short, long, action = clap::ArgAction::SetTrue)]
+    pub models: bool,
 }
 
 #[derive(Debug, Args)]
